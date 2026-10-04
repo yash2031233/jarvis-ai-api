@@ -32,6 +32,7 @@ in Settings and pick a model. No subscription, no lock-in.
 - 🧠 **Memory that grows**: an Obsidian-compatible notes vault Jarvis files facts into by itself, a nightly diary, search your files by meaning, and lessons learned from its own mistakes
 - 🕰️ **Proactive**: morning briefing, rain/test/battery heads-ups, quiet hours, long tasks run in the background
 - 🔁 **Habits**: repeated tool sequences get compiled into real, sandboxed, tested tools
+- 📱 **Phone app**: add it to your home screen over Tailscale - talk to Jarvis, hear him, and navigate with your phone's GPS, anywhere
 - 🧾 **See what it did**: every reply shows the tools it called (live), with timings - in the conversation and the History panel
 - 🔒 **Safe by default**: risky actions ask first, file changes are undoable, API keys live in your OS keychain
 - 🧩 **Extensible**: drop a Python file in `plugins/` to add a tool, or save multi-step tasks as skills
@@ -174,6 +175,25 @@ Jarvis keeps an Obsidian-compatible Markdown vault (or point it at yours in **Se
 spell it files lasting facts from your conversations into notes by itself, writes a short diary each night, and
 reflects on what went wrong to keep a list of principles it follows. **Settings → Memory** can turn each part off.
 
+## Phone app
+
+Jarvis runs on your computer; your phone can use it as an app - its own mic, speaker and GPS - from anywhere,
+privately, with [Tailscale](https://tailscale.com) (free):
+
+1. Install Tailscale on the computer and the phone and sign in to the same account on both.
+2. On the computer, once:
+   ```bash
+   tailscale serve --bg --https=8443 http://127.0.0.1:47821
+   ```
+   It prints your address, like `https://my-pc.tailXXXX.ts.net:8443` - reachable only by your own devices.
+3. Open that address on the phone. iPhone: Share → **Add to Home Screen**. Android: ⋮ → **Install app**.
+
+In the app, tap the mic and talk (it stops when you stop) - Jarvis's Whisper on the computer listens and his
+voice answers from the phone; typed questions get typed answers. While the app is open, the phone's GPS keeps
+"where am I", routes and ETAs current, and navigation speaks every turn from the phone. Keep the app open with
+the screen on while navigating - phones pause web apps in the background. For location while the app is closed,
+use the Telegram bot below too.
+
 ## Maps & navigation
 
 Ask *"how long to drive to work"*, *"walk me to the nearest coffee shop"*, *"take me to the airport"*. Jarvis finds
@@ -233,7 +253,7 @@ calls. Side-effecting tools are stubbed so it's safe to run. Results are saved t
 
 ```bash
 pip install -e ".[all,dev]"   # optional: [pocket] for the Pocket TTS voices (needs PyTorch)
-pytest -q                      # 152 tests, no network needed
+pytest -q                      # 153 tests, no network needed
 jarvis --browser -v
 ```
 

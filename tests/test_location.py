@@ -92,6 +92,24 @@ def test_weather_uses_live_location():
     assert (lat, lon, place) == (48.85, 2.35, "your location")
 
 
+def test_telegram_bot_and_pairing_survive_a_restart(monkeypatch):
+    import keyring
+
+    from jarvis import config, telegram
+
+    vault = {}
+    monkeypatch.setattr(keyring, "set_password", lambda svc, k, v: vault.__setitem__((svc, k), v))
+    monkeypatch.setattr(keyring, "get_password", lambda svc, k: vault.get((svc, k)))
+    monkeypatch.setattr(keyring, "delete_password", lambda svc, k: vault.pop((svc, k), None))
+    config.set_secret(telegram.TOKEN_KEY, "123456789:AAtest-token-abcdefghijklmnop")
+    config.store.update(telegram_chat_id=4242)
+    monkeypatch.setattr(config, "store", config._Store())            # a fresh process reads it all back from disk
+    st = telegram.status()
+    assert st["token_set"] and st["paired"] and telegram.chat_id() == 4242
+    config.store.update(telegram_chat_id=None)
+    config.set_secret(telegram.TOKEN_KEY, "")
+
+
 def test_telegram_pairing_and_locations():
     from jarvis import config, telegram
 

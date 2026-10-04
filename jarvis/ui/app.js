@@ -1,6 +1,7 @@
 // Jarvis UI: orb + prompt + voice + settings, talking to the local server.
 import { Orb } from "/ui/orb3d.js";
 import { createMap } from "/ui/map.js";
+import { createPhone, REMOTE } from "/ui/phone.js";
 
 const TOKEN = document.querySelector('meta[name="jarvis-token"]').content;
 const $ = (id) => document.getElementById(id);
@@ -15,6 +16,10 @@ const api = async (path, opts = {}) => {
 };
 
 const orb = new Orb($("orb"));
+// opened from a phone (e.g. over Tailscale): its own mic, speaker and GPS - see phone.js
+const phone = REMOTE ? createPhone({ api, token: TOKEN, orb, toast: (...a) => toast(...a),
+  onText: (text) => send({ type: "ask", text, source: "phone" }) }) : null;
+if (REMOTE) document.body.classList.add("remote");
 new ResizeObserver(() => orb.resize()).observe($("orb"));   // it shrinks into the corner in model mode
 let ws = null;
 let settings = null;
@@ -138,7 +143,7 @@ function turnToolEnd(ev) {
 
 // ------------------------------------------------------------------ websocket
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(TOKEN)}`);
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?token=${encodeURIComponent(TOKEN)}`);
   ws.onopen = () => setStatus("");
   ws.onclose = () => { setStatus("Reconnecting…", "warn"); setTimeout(connect, 1000); };
   ws.onmessage = (m) => handle(JSON.parse(m.data));
@@ -205,6 +210,7 @@ ${ev.result}`);
       if (!replyText) { $("reply").innerHTML = `<span class="muted">${escapeHtml(ev.text)}</span>`; showReply(true); }
       break;
     case "delta":
+      if (phone) phone.feed(ev.text);
       replyText += ev.text;
       convo.stream(replyText);
       historyLive.stream(replyText);
@@ -223,6 +229,7 @@ ${ev.result}`);
       setBusy(false);
       convo.end();
       historyLive.end();
+      if (phone) phone.finish();
       setTimeout(() => $("transcript").classList.remove("show"), 2500);
       break;
     case "cancelled":
@@ -258,7 +265,7 @@ ${ev.result}`);
 function updateMic() {
   const ready = voiceStatus === "ready";
   $("btnMic").classList.toggle("off", !ready);
-  $("btnMic").title = ready ? "Talk (or say “Hey Jarvis”)" : `Voice: ${voiceStatus}`;
+  $("btnMic").title = ready ? (REMOTE ? "Tap to talk" : "Talk (or say “Hey Jarvis”)") : `Voice: ${voiceStatus}`;
 }
 
 // ------------------------------------------------------------------ prompt + mic
@@ -267,7 +274,8 @@ $("prompt").addEventListener("submit", (e) => {
   const text = $("input").value.trim();
   if (!text) return;
   promptHistory.unshift(text); histIdx = -1;
-  send({ type: "ask", text });
+  if (phone) phone.typed();
+  send({ type: "ask", text, source: phone ? "phone" : "text" });
   $("input").value = "";
 });
 const promptHistory = [];
@@ -277,9 +285,10 @@ $("input").addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown") { histIdx = Math.max(-1, histIdx - 1); $("input").value = histIdx >= 0 ? promptHistory[histIdx] : ""; e.preventDefault(); }
 });
 $("input").addEventListener("input", () => { if ($("input").value.length === 1) send({ type: "interrupt" }); });
-$("btnStop").onclick = () => send({ type: "cancel" });
-$("btnMic").onclick = () => send({ type: "ptt" });
-$("orb").addEventListener("click", () => { if (!orb.consumeDrag()) send({ type: "ptt" }); });
+$("btnStop").onclick = () => { if (phone) phone.stop(); send({ type: "cancel" }); };
+const talk = () => (phone ? phone.listen() : send({ type: "ptt" }));
+$("btnMic").onclick = talk;
+$("orb").addEventListener("click", () => { if (!orb.consumeDrag()) talk(); });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (!$("confirm").classList.contains("hidden")) return answerConfirm(false);
@@ -879,9 +888,20 @@ async function loadLocation() {
     $("btnTgPair").disabled = !t.token_set;
   } catch { /* optional */ }
 }
+// an empty box means "nothing typed", not "delete": the saved token / pairing stay unless you confirm removing them
 $("btnTgSave").addEventListener("click", async () => {
-  await api("/api/telegram", { method: "POST", body: { token: $("tgToken").value.trim() } });
-  $("tgToken").value = ""; loadLocation();
+  const tok = $("tgToken").value.trim();
+  if (!tok) {
+    const t = await api("/api/telegram");
+    if (!t.token_set) return toast("Paste the token from @BotFather first.");
+    if (!confirm("Remove the saved Telegram bot (and its pairing)?")) return;
+  } else if (!/^\d+:[\w-]{20,}$/.test(tok)) {
+    return toast("That doesn't look like a bot token (it looks like 123456789:ABC…).", "warn");
+  }
+  const t = await api("/api/telegram", { method: "POST", body: { token: tok } });
+  $("tgToken").value = "";
+  if (tok) toast(t.error ? `Telegram: ${t.error}` : `Saved ✓ ${t.bot || ""} - now press Pair.`, t.error ? "error" : "info", 7000);
+  loadLocation();
 });
 $("btnTgPair").addEventListener("click", async () => {
   const t = await api("/api/telegram", { method: "POST", body: { pair: true } });
@@ -891,8 +911,15 @@ $("btnTgPair").addEventListener("click", async () => {
   setTimeout(() => clearInterval(poll), 600000);
 });
 $("btnGmSave").addEventListener("click", async () => {
-  await api("/api/maps-key", { method: "POST", body: { key: $("gmKey").value.trim() } });
-  $("gmKey").value = ""; loadLocation();
+  const key = $("gmKey").value.trim();
+  if (!key) {
+    const m = await api("/api/maps-key");
+    if (!m.set) return toast("Paste a Google Maps API key first.");
+    if (!confirm("Remove the saved Google Maps key (routes go back to OpenStreetMap)?")) return;
+  }
+  await api("/api/maps-key", { method: "POST", body: { key } });
+  $("gmKey").value = ""; if (key) toast("Google Maps key saved ✓");
+  loadLocation();
 });
 $("sNavVoice").addEventListener("change", () => save({ nav_voice: $("sNavVoice").checked }));
 $("sNavUnits").addEventListener("change", () => save({ nav_units: $("sNavUnits").value }));
@@ -900,7 +927,9 @@ $("sNavUnits").addEventListener("change", () => save({ nav_units: $("sNavUnits")
 // ------------------------------------------------------------------ map mode (location tool, navigation)
 const mapview = createMap({
   api,
+  speak: phone ? (text, urgent) => phone.say(text, { urgent }) : null,   // on the phone: directions from its speaker
   onOpen() {
+    if (phone) phone.gpsOn();
     if (document.body.dataset.mode === "model") model.exit();
     if (document.body.dataset.mode === "camera") camview.close();
     if (document.body.dataset.mode === "study") studyview.close();

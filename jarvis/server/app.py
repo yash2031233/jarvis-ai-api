@@ -153,6 +153,117 @@ async def compare_snapshot(request: Request):
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 
+# ---------------------------------------------------------------------------- phone app (installable web app)
+# Opened from a phone (e.g. over Tailscale: https://<pc>.<tailnet>.ts.net:8443) and added to the home screen.
+@app.get("/manifest.webmanifest")
+async def manifest():
+    return JSONResponse({
+        "name": "J.A.R.V.I.S.", "short_name": "Jarvis", "start_url": "/", "scope": "/", "display": "standalone",
+        "background_color": "#050302", "theme_color": "#050302", "orientation": "any",
+        "icons": [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                  {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}],
+    }, media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(UI_DIR / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
+_icons: dict[int, bytes] = {}
+
+
+@app.get("/icon-{size}.png")
+@app.get("/apple-touch-icon.png")
+async def icon(size: int = 180):
+    """The app icon on a solid background (iOS shows transparent corners black anyway)."""
+    size = size if size in (180, 192, 512) else 180
+    if size not in _icons:
+        import io
+
+        from PIL import Image
+
+        src = Image.open(UI_DIR / "jarvis-icon.png").convert("RGBA")
+        bg = Image.new("RGBA", (size, size), (5, 3, 2, 255))
+        inner = int(size * 0.86)
+        art = src.resize((inner, inner), Image.LANCZOS)
+        bg.alpha_composite(art, ((size - inner) // 2, (size - inner) // 2))
+        buf = io.BytesIO()
+        bg.convert("RGB").save(buf, "PNG")
+        _icons[size] = buf.getvalue()
+    from fastapi.responses import Response
+
+    return Response(_icons[size], media_type="image/png", headers={"Cache-Control": "max-age=86400"})
+
+
+def _decode_audio(data: bytes):
+    """Any recording a browser makes (webm/opus, mp4/aac from iPhones, wav) -> 16 kHz mono float32 for Whisper."""
+    import io
+
+    import av
+    import numpy as np
+
+    out = []
+    with av.open(io.BytesIO(data)) as c:
+        res = av.AudioResampler(format="s16", layout="mono", rate=16000)
+        for frame in c.decode(audio=0):
+            for f in res.resample(frame):
+                out.append(f.to_ndarray().reshape(-1))
+        for f in res.resample(None):
+            out.append(f.to_ndarray().reshape(-1))
+    return (np.concatenate(out).astype(np.float32) / 32768.0) if out else np.zeros(0, np.float32)
+
+
+@app.post("/api/voice/transcribe")
+async def voice_transcribe(request: Request):
+    """Speech from the phone's mic (whatever the browser records: webm / mp4 / wav) -> text, with Jarvis's Whisper."""
+    vp = state["voice"]
+    if not (vp and vp.stt.model is not None):
+        raise HTTPException(503, "Voice isn't loaded on the PC (Settings → Voice).")
+    data = await request.body()
+    if len(data) < 200:
+        return {"text": ""}
+
+    def run() -> str:
+        return vp.stt.transcribe(_decode_audio(data))
+    try:
+        return {"text": await asyncio.to_thread(run)}
+    except Exception as e:
+        raise HTTPException(400, f"Couldn't understand that recording: {e}")
+
+
+@app.post("/api/tts")
+async def tts_audio(body: dict[str, Any]):
+    """One sentence in Jarvis's voice as a WAV, for the phone (its own speaker) - replies and spoken directions."""
+    vp = state["voice"]
+    text = str(body.get("text", "")).strip()[:400]
+    if not (vp and vp.tts.kokoro is not None):
+        raise HTTPException(503, "voice not loaded")
+    if not text:
+        raise HTTPException(400, "no text")
+
+    def run() -> bytes:
+        import io
+        import wave
+
+        import numpy as np
+
+        parts, sr = [], 24000
+        for chunk, sr in vp.tts._chunks(text):
+            parts.append(chunk)
+        pcm = (np.clip(np.concatenate(parts) if parts else np.zeros(1, np.float32), -1, 1) * 32767).astype("<i2")
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
+            w.writeframes(pcm.tobytes())
+        return buf.getvalue()
+    from fastapi.responses import Response
+
+    return Response(await asyncio.to_thread(run), media_type="audio/wav")
+
+
 # ---------------------------------------------------------------------------- settings
 def _settings_payload() -> dict[str, Any]:
     s = config.store.load()
@@ -737,7 +848,8 @@ async def ws(socket: WebSocket):
             if t == "ask":
                 if vp:
                     vp.interrupt()
-                asyncio.create_task(agent.handle(str(msg.get("text", "")), source="text"))
+                src = "phone" if msg.get("source") == "phone" else "text"
+                asyncio.create_task(agent.handle(str(msg.get("text", "")), source=src))
             elif t == "cancel":
                 agent.cancel()
                 if vp:

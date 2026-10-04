@@ -244,6 +244,7 @@ The main screen is minimal: **the Jarvis orb, a prompt box, voice controls and a
 - Location & navigation (ported from v1): phone GPS via your own Telegram bot (or this device), routes with live ETA (OSRM + Valhalla re-timed, or Google live traffic with a key), Google-Maps-style spoken turn-by-turn with rerouting and faster-route checks, nearby, saved places, location reminders, trip
 - Every screen and setting is also a tool: settings, camera_setup, show_panel, conversation_history, message_phone
 - Tool calls shown in the conversation and History (live chips with timings)
+- Phone app: installable web app over Tailscale (`tailscale serve`), phone mic → Whisper on the PC, replies and spoken directions on the phone, phone GPS while open
 
 ## 12. 🛠️ Hardware & Performance
 - [v1] GPU detection (CUDA; Blackwell — RTX 50xx / RTX Pro 6000 — needs CUDA 12.8+ and recent PyTorch/CTranslate2)

@@ -106,7 +106,8 @@ class Agent:
         self.busy = asyncio.Lock()
         self.speaker: Callable[[str], None] | None = None  # set by voice pipeline
         self.speak_enabled: Callable[[], bool] = lambda: False
-        self.turn_tools: list[dict[str, Any]] = []  # this request's tool calls, saved with the reply for the transcript
+        self.turn_tools: list[dict[str, Any]] = []
+        self.remote = False  # this request's tool calls, saved with the reply for the transcript
 
     def _emit(self, type_: str, **data: Any) -> None:
         if self.job_id is None:
@@ -135,6 +136,8 @@ class Agent:
         async with self.busy:
             self.cancel_event = asyncio.Event()
             self.turn_tools = []
+            # asked from the phone app or Telegram: the reply is heard there, not from the PC's speakers
+            self.remote = source in ("phone", "telegram")
             t0 = time.perf_counter()
             self._emit("user", text=text, source=source)
             if self.job_id is None:
@@ -372,7 +375,7 @@ class Agent:
 
     # ------------------------------------------------------------------ helpers
     def _say(self, sentence: str) -> None:
-        if self.job_id is None and self.speaker and self.speak_enabled():
+        if self.job_id is None and not self.remote and self.speaker and self.speak_enabled():
             self.speaker(sentence)
 
     def _finish_reply(self, reply: str, fast: bool = False) -> None:

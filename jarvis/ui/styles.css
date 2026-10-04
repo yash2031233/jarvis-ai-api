@@ -441,3 +441,36 @@ body.navOn .navBot { display: flex; align-items: center; gap: 12px; position: ab
 .navExit { padding: 11px 18px; border: 0; background: #d23b4c; color: #fff; font: 700 13px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; cursor: pointer;
   clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
 body.navOn #mapView .leaflet-tile { opacity: 1 !important; }
+
+/* ============================================================================================================
+   Phone app (opened from a phone, e.g. over Tailscale, added to the home screen): notch / home-bar safe areas,
+   thumb-sized buttons, no zoom-on-focus, full-width panels.
+   ============================================================================================================ */
+html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+.topbar { padding-top: max(10px, env(safe-area-inset-top)); padding-left: max(14px, env(safe-area-inset-left));
+          padding-right: max(14px, env(safe-area-inset-right)); }
+.dock { padding-bottom: max(18px, calc(env(safe-area-inset-bottom) + 8px)); }
+.drawer { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+body.recording .mic { border-color: var(--danger); box-shadow: 0 0 0 4px rgba(255, 122, 92, .18), 0 0 26px rgba(255, 122, 92, .45);
+                      animation: recPulse 1.2s ease-in-out infinite; }
+@keyframes recPulse { 50% { box-shadow: 0 0 0 9px rgba(255, 122, 92, .08), 0 0 34px rgba(255, 122, 92, .55); } }
+@media (pointer: coarse) {
+  .icon-btn { width: 40px; height: 40px; }
+  .mic { width: 56px; height: 56px; }
+  input, select, textarea, .prompt input[type=text] { font-size: 16px; }   /* iOS zooms into smaller inputs */
+}
+@media (max-width: 560px) {
+  .topbar { gap: 4px; }
+  .brand { display: none; }
+  .status { font-size: 11px; }
+  .win-controls { gap: 0; margin-left: auto; }
+  .dock { padding-left: 10px; padding-right: 10px; }
+  .drawer { width: 100%; }
+  .reply { bottom: 6px; width: calc(100% - 20px); max-height: 46%; overflow: auto; }
+  .mapCard { left: 8px; right: 8px; width: auto; top: 8px; max-height: 45%; }
+  .mapBtns { top: auto; bottom: 150px; right: 8px; }
+  #mapView .mvClose { top: auto; bottom: 106px; right: 8px; }
+  body[data-mode="map"] #orb { width: 76px; height: 76px; bottom: 84px; left: 8px; right: auto; }
+  body.navOn .navTop { top: calc(8px + env(safe-area-inset-top)); left: 8px; right: 8px; padding: 12px 14px; }
+  body.navOn .navBot { left: 8px; right: 8px; bottom: calc(76px + env(safe-area-inset-bottom)); }
+}

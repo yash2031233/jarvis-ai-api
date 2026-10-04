@@ -11,7 +11,7 @@
 const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";   // keyless; darkened in CSS
 const LEAFLET = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/";
 
-export function createMap({ api, onOpen, onClose }) {
+export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   let L = null, map = null, layers = {}, state = {}, route = null, followMe = true;
@@ -323,6 +323,7 @@ export function createMap({ api, onOpen, onClose }) {
       const now = Date.now();
       if (now - (recent.get(text) || 0) < 20000) return;
       recent.set(text, now);
+      if (speakHere) return speakHere(text, !!opt.urgent);   // the phone app: its own speaker
       api("/api/geo/say", { method: "POST", body: { text, urgent: !!opt.urgent } }).then((r) => {
         if (r && r.spoken) return;
         if (!("speechSynthesis" in window)) return;           // no voice in the app: the browser's own
