@@ -51,6 +51,6 @@ jobs:
         run: |
           pkill -f "jarvis --headless" || pkill -f "python -m jarvis" || true
           sleep 2
-          timeout 120 ./install.sh --headless --no-voice --port 47822 > second.out 2>&1 &
+          ./install.sh --headless --no-voice --port 47822 > second.out 2>&1 &
           for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:47822/ && exit 0; sleep 2; done
           cat second.out; exit 1
