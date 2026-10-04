@@ -474,3 +474,6 @@ body.recording .mic { border-color: var(--danger); box-shadow: 0 0 0 4px rgba(25
   body.navOn .navTop { top: calc(8px + env(safe-area-inset-top)); left: 8px; right: 8px; padding: 12px 14px; }
   body.navOn .navBot { left: 8px; right: 8px; bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
+
+/* the corner orb over a map / camera / 3D part: its black background blends away, only the glow shows */
+body[data-mode] #orb { mix-blend-mode: screen; background: transparent; }
