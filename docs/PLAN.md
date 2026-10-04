@@ -207,13 +207,18 @@ Local is the default: faster on decent hardware, free, private, works offline, d
 - [later] Document Q&A (point at a folder)
 
 ## 10. 🖥️ UI
-- [v1] Sci-fi HUD: animated orb reacting to listening / thinking / speaking
-- [v1] Voice waveform visualizer
-- [v1] Chat panel (markdown, code blocks)
-- [v1] **Live tool activity panel** — see each step, timing, and verification result
-- [v1] Settings panel
-- [v1] Tray icon + global show/hide hotkey
-- [v1] Dark theme + accent colors
+**Full spec: [UI_ORB.md](UI_ORB.md)** · Reference image: [reference/orb-reference.webp](reference/orb-reference.webp)
+
+The main screen is minimal: **the Jarvis orb, a prompt box, voice controls and a settings button.**
+
+- [v1] **Jarvis orb** — WebGL (Three.js) amber circuit-trace orb that must be visually
+  indistinguishable from the reference image; reacts to idle / listening / thinking / speaking / working
+- [v1] Orb comparison harness (side-by-side, overlay slider, diff + similarity score) used to tune fidelity
+- [v1] Prompt box + mic button (push-to-talk, wake-word status)
+- [v1] Settings panel (⚙): API key, provider/URL, model, voice, hotkey, permissions
+- [v1] Reply text fades in near the orb; history in a hidden drawer (markdown, code blocks)
+- [v1] **Live tool activity** — compact, appears only while tools run
+- [v1] Frameless window, tray icon + global show/hide hotkey
 - [later] Compact always-on-top mini mode
 - [later] Overlay mode (over games/fullscreen)
 - [later] Themes / skins (Iron Man, minimal, retro terminal)

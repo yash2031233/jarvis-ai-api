@@ -25,7 +25,7 @@ in the settings screen and pick a model. No subscription, no lock-in.
 - 🖐️ **Fast agentic tools** — controls apps, files, browser, media and system; plans, acts and verifies its work
 - 🎙️ **Local voice** — "Hey Jarvis" wake word, Whisper speech-to-text, Kokoro/Piper text-to-speech, interrupt any time
 - ⚡ **Built for speed** — common commands run instantly without an LLM call; tools run in parallel
-- 🖥️ **Sci-fi HUD** — animated orb, waveform, live tool activity panel
+- 🖥️ **The orb** — a living amber circuit-trace orb is the whole UI: orb, prompt box, mic, settings ([spec](docs/UI_ORB.md))
 - 🔒 **Safe by default** — risky actions need confirmation, file changes are undoable, API keys live in your OS keychain
 - 🧩 **Extensible** — drop a Python file in `plugins/` to add a new tool or skill
 
