@@ -66,7 +66,8 @@
 </main>
 
 <script type="module">
-import { Orb } from "/ui/orb.js";
+import { Orb } from "/ui/orb3d.js";
+const force2d = new URLSearchParams(location.search).has("2d");
 
 const REF = "/compare/reference";
 const N = 1920;
@@ -75,8 +76,9 @@ ref.src = REF;
 document.getElementById("refimg").src = REF;
 document.getElementById("ovref").src = REF;
 
-const orb1 = new Orb(document.getElementById("c1"), { frozen: true, pixelSize: N, noAutoResize: true });
-const orb2 = new Orb(document.getElementById("c2"), { frozen: true, pixelSize: N, noAutoResize: true });
+const orb1 = new Orb(document.getElementById("c1"), { frozen: true, pixelSize: N, noAutoResize: true, force2d });
+document.querySelector("#side .cell:nth-child(2) .label").textContent = `render (${orb1.mode})`;
+const orb2 = new Orb(document.getElementById("c2"), { frozen: true, pixelSize: N, noAutoResize: true, force2d });
 
 // ---- modes
 document.querySelectorAll("header button").forEach((b) => b.addEventListener("click", () => {

@@ -72,18 +72,21 @@ The image is the source of truth; the text below supports it, it doesn't replace
 - Orb is centered, roughly circular silhouette with the ring breaking it horizontally.
 - Visual weight: core + ring + diagonal streak are the focal points; outer shell frames them.
 
-## 3. Rendering approach
-- **Three.js (WebGL2)** in the web UI.
-- Traces generated procedurally:
-  - Random walks on a (θ, φ) grid with 45°-quantized turns, per layer with its own density map
-    (e.g. polar bias for the outer shell, band mask for the ring) → projected onto the layer radius.
-  - Core: hex grid + concentric rings, projected onto an inner sphere/tunnel.
-  - Streaks: bundles of jittered parallel polylines.
-- Rendered as `LineSegments2` (fat lines) or instanced quads for consistent pixel width,
-  **additive blending**, depth test off.
-- Post-processing: `UnrealBloomPass` (tight), slight tone mapping to push overlaps to white.
-- **Seeded RNG** so the orb looks the same every launch (tuned seed checked into the repo).
-- Performance target: 60 fps on integrated GPUs (cap trace count; LOD for low-end).
+## 3. Rendering approach (as built)
+- **Design generator** (`jarvis/ui/orb.js`): every layer is procedurally generated in the reference
+  image's 1920×1920 coordinate space from PCB/molecule-style chains (zig-zag bonds, branches,
+  hexagons, dot terminals) with a fixed seed. Parameters were tuned against the reference with
+  the `/compare` tool (SSIM ≈ 0.79, luminance correlation ≈ 0.83 at rest).
+- **3D renderer** (`jarvis/ui/orb3d.js`, WebGL2, no dependencies): each line is lifted into 3D:
+  outer shell and surface chains onto spheres, arcs and core rings onto tilted circles, the
+  equatorial ring onto its real tilted plane, the streak onto an axis through the core. Points
+  are pre-corrected for perspective so the **resting view is pixel-identical to the 2D design**
+  (full-res correlation 0.993 vs. the 2D renderer).
+- Lines are screen-space polylines with mitered joins and analytic anti-aliasing (constant pixel
+  width, sub-pixel fade); the glow is three Gaussian passes on a GPU blur pyramid, same radii and
+  strengths as the 2D version. Runs at 60 fps.
+- Drag to rotate (inertia, eases back to the reference pose); gentle idle sway shows the depth.
+- Falls back to the 2D canvas renderer automatically when WebGL2 isn't available.
 
 ## 4. Motion & states
 Idle should look like the still reference with subtle life — never a different design.

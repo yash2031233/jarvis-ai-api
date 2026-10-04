@@ -1,4 +1,6 @@
-// The Jarvis orb — procedural amber "molecular circuit" sphere.
+// The Jarvis orb — procedural amber "molecular circuit" sphere (geometry + 2D fallback renderer).
+// The main renderer is orb3d.js (WebGL2, real 3D); this file generates the design and is used
+// directly when WebGL2 isn't available.
 //
 // Everything is generated in the reference image's own coordinate space (1920×1920),
 // baked once into per-layer textures (sharp lines + glow), then composited every frame
@@ -135,7 +137,7 @@ class Chemist {
 }
 
 // ------------------------------------------------------------------ geometry builders
-function buildLayers(cfg) {
+export function buildLayers(cfg) {
   const rng = mulberry32(cfg.seed);
   const chem = new Chemist(rng, cfg);
   const [CX, CY] = cfg.center;
@@ -375,7 +377,7 @@ function buildLayers(cfg) {
 }
 
 // ------------------------------------------------------------------ baking
-function brightnessField(cfg, x, y) {
+export function brightnessField(cfg, x, y) {
   const h = cfg.hotspot;
   const d = Math.hypot(x - h.x, y - h.y) / h.r;
   return 1 + h.gain * Math.max(0, 1 - d * d);
@@ -436,9 +438,9 @@ function bakeLayer(layer, cfg, scale) {
 }
 
 // ------------------------------------------------------------------ renderer
-const LAYER_ORDER = ["outer", "arcs", "surface", "core", "ring", "comet", "streak"];
+export const LAYER_ORDER = ["outer", "arcs", "surface", "core", "ring", "comet", "streak"];
 
-export class Orb {
+export class Orb2D {
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");

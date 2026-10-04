@@ -1,5 +1,5 @@
 // Jarvis UI: orb + prompt + voice + settings, talking to the local server.
-import { Orb } from "/ui/orb.js";
+import { Orb } from "/ui/orb3d.js";
 
 const TOKEN = document.querySelector('meta[name="jarvis-token"]').content;
 const $ = (id) => document.getElementById(id);
@@ -194,7 +194,7 @@ $("input").addEventListener("keydown", (e) => {
 $("input").addEventListener("input", () => { if ($("input").value.length === 1) send({ type: "interrupt" }); });
 $("btnStop").onclick = () => send({ type: "cancel" });
 $("btnMic").onclick = () => send({ type: "ptt" });
-$("orb").addEventListener("click", () => send({ type: "ptt" }));
+$("orb").addEventListener("click", () => { if (!orb.consumeDrag()) send({ type: "ptt" }); });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (!$("confirm").classList.contains("hidden")) return answerConfirm(false);

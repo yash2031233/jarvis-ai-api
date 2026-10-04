@@ -25,7 +25,7 @@ in Settings and pick a model. No subscription, no lock-in.
 - 🖐️ **42 built-in tools**: apps, files, web, browser automation, media, volume, timers, clipboard, shell, Python, weather, notes, skills
 - ⚡ **Instant commands**: "open Spotify", "volume 40", "timer 5 minutes" run in milliseconds with **no LLM call**
 - 🎙️ **Local voice**: "Hey Jarvis" wake word, Whisper speech-to-text, Kokoro text-to-speech, interrupt any time
-- 🔮 **The orb**: a procedural amber "molecular circuit" sphere that listens, thinks and speaks with you
+- 🔮 **The orb**: a real-time 3D (WebGL2) amber "molecular circuit" sphere that listens, thinks and speaks with you. Drag it to spin it
 - 🔒 **Safe by default**: risky actions ask first, file changes are undoable, API keys live in your OS keychain
 - 🧩 **Extensible**: drop a Python file in `plugins/` to add a tool, or save multi-step tasks as skills
 
