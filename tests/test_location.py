@@ -60,7 +60,7 @@ def test_reminder_fires_on_arrival_once():
 def test_route_tool_shows_map_and_reports_eta(monkeypatch):
     geo.record(40.7580, -73.9855, 10)
     shown = {}
-    monkeypatch.setattr(geo, "show", lambda **p: shown.update(p))
+    monkeypatch.setattr(geo, "show", lambda **p: (shown.clear(), shown.update(p)))
     monkeypatch.setattr(geo, "search", lambda q, near=None, **k: [
         {"name": "Empire State Building", "address": "350 5th Ave", "lat": 40.7484, "lon": -73.9857}])
     fake = {"src": "osrm", "secs": 900, "dist_m": 1300, "geometry": [[40.758, -73.9855], [40.7484, -73.9857]],
@@ -72,7 +72,7 @@ def test_route_tool_shows_map_and_reports_eta(monkeypatch):
     r = run("location", action="route", to="empire state building", mode="walk")
     assert r.ok, r.error
     assert r.output["minutes"] == 15 and r.output["to"] == "Empire State Building"
-    assert shown["view"] == "route" and shown["route"]["to"]["name"] == "Empire State Building"
+    assert shown["view"] == "route" and shown["route"]["to"]["name"] == "Empire State Building" and not shown.get("routing")
     assert shown["route"]["mode"] == "walk" and len(shown["route"]["geometry"]) == 2
 
 

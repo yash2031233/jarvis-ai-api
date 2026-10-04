@@ -65,6 +65,8 @@ def _run(action, to, mode, what, name, address, text, on, radius_m, id, hours) -
         if not to:
             raise ToolError("route needs `to`.")
         me = geo.here()
+        # the map opens right away on your position while the route is worked out
+        geo.show(view="me", me=geo.me_view(me), routing=to, **base)
         dest = geo.resolve(to)
         r = geo.route(dest, me, mode if mode in geo.ROUTER else "drive")
         geo.show(view="route", me=geo.me_view(me), route={**r, "to": dest}, **base)

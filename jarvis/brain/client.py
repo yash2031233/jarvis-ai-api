@@ -22,6 +22,9 @@ from .repair import ToolCall, extract_text_tool_calls, match_tool_name, normaliz
 log = logging.getLogger(__name__)
 
 
+DEGENERATE = re.compile(r"([^\w\s])\1{15,}")   # 16+ of the same symbol in a row
+
+
 class BrainError(Exception):
     def __init__(self, message: str, kind: str = "error") -> None:
         super().__init__(message)
@@ -128,6 +131,7 @@ class Brain:
         on_text: Any = None,
         on_tool_call: Any = None,
         cancel: asyncio.Event | None = None,
+        no_think: bool = False,
     ) -> TurnResult:
         """One model turn. Streams text through on_text(delta).
 
@@ -143,6 +147,10 @@ class Brain:
 
         req_messages = messages
         kwargs: dict[str, Any] = {}
+        if no_think:
+            # a retry after a broken turn: answer without the thinking phase (where the breakage happens)
+            kwargs["extra_body"] = {"chat_template_kwargs": {"thinking": False, "enable_thinking": False},
+                                    "reasoning_effort": "none"} if s.provider in ("lmstudio", "ollama") else                 {"chat_template_kwargs": {"thinking": False, "enable_thinking": False}}
         if tools and native:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
@@ -155,6 +163,9 @@ class Brain:
                     model, req_messages, kwargs, known, s, on_text, on_tool_call, cancel
                 )
             except BrainError as e:
+                if "extra_body" in kwargs and e.kind in ("error", "tools_unsupported") and "400" in str(e):
+                    kwargs.pop("extra_body")          # this server doesn't take the no-thinking switch
+                    continue
                 if e.kind == "tools_unsupported" and native and tools:
                     log.info("model %s rejected native tools; switching to text tool calling", model)
                     self.native_tools[model] = False
@@ -193,6 +204,7 @@ class Brain:
         emitted: set[int] = set()
         text_parts: list[str] = []
         holding = False  # suppress streaming text that is actually a text tool call
+        reasoning = ""   # watched for degeneration (seen on NVIDIA: the thoughts turn into "!!!!!!!…" and the turn dies)
 
         def finish_call(idx: int) -> None:
             if idx in emitted or idx not in partial:
@@ -223,6 +235,14 @@ class Brain:
                     continue
                 ch = chunk.choices[0]
                 d = ch.delta
+                rc = (getattr(d, "model_extra", None) or {}).get("reasoning_content") if d is not None else None
+                if rc:
+                    reasoning = (reasoning + rc)[-200:]
+                    if DEGENERATE.search(reasoning):
+                        log.info("model output degenerated (%r); abandoning this turn", reasoning[-24:])
+                        await stream.close()
+                        result.finish_reason = "degenerate"
+                        break
                 if d is not None and d.content:
                     text_parts.append(d.content)
                     joined = "".join(text_parts)

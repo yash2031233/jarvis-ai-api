@@ -75,7 +75,9 @@ class Settings(BaseModel):
     tts_voice: str = "bm_george"
     tts_speed: float = 1.0
     wake_word: bool = True
+    wake_phrase: str = "jarvis"      # also wake on this word at the start of what you say ("" = only "hey Jarvis")
     mic_device: int | None = None
+    speaker_device: str = ""        # output device name ("" = the system default)
     hotkey: str = "ctrl+space"
 
     # CAD (OpenSCAD)

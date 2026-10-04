@@ -12,19 +12,33 @@ export function createPhone({ api, token, orb, toast, onText }) {
   let ctx = null, playing = null, queue = [], busy = false, gen = 0;
   let speakReplies = false, buf = "";
 
-  // ---- audio out (iOS only lets a page play sound after a tap: the first tap unlocks it)
-  function audio() {
+  // ---- audio out. Jarvis's voice plays through a normal media player, not Web Audio: iPhones mute Web Audio when
+  // the ring/silent switch is on, media keeps playing. iOS only lets a page play sound after a tap, so the first tap
+  // "unlocks" the player with a moment of silence.
+  const player = new Audio();
+  player.playsInline = true;
+  player.preload = "auto";
+  const SILENCE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+  let unlocked = false;
+  function audio() {                                   // the mic meter still uses Web Audio (input only)
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
     return ctx;
   }
-  for (const ev of ["touchend", "click"]) addEventListener(ev, () => audio(), { passive: true });
+  function unlock() {
+    audio();
+    if (unlocked) return;
+    unlocked = true;
+    player.src = SILENCE;
+    player.play().catch(() => { unlocked = false; });
+  }
+  for (const ev of ["touchend", "click"]) addEventListener(ev, unlock, { passive: true });
 
   async function fetchVoice(text) {
     const r = await fetch("/api/tts", { method: "POST", body: JSON.stringify({ text }),
       headers: { "content-type": "application/json", "x-jarvis-token": token } });
     if (!r.ok) throw new Error("no voice");
-    return audio().decodeAudioData(await r.arrayBuffer());
+    return URL.createObjectURL(await r.blob());
   }
   function browserVoice(text) {
     return new Promise((res) => {
@@ -34,19 +48,20 @@ export function createPhone({ api, token, orb, toast, onText }) {
       speechSynthesis.speak(u);
     });
   }
-  function playBuffer(b) {
+  function playBuffer(url) {
     return new Promise((res) => {
-      const c = audio(), src = c.createBufferSource(), an = c.createAnalyser();
-      an.fftSize = 512;
-      src.buffer = b; src.connect(an); an.connect(c.destination);
-      const data = new Float32Array(an.fftSize);
-      let raf = 0;
-      const meter = () => { an.getFloatTimeDomainData(data); let s = 0; for (const v of data) s += v * v;
-        orb.setLevel(Math.min(1, Math.sqrt(s / data.length) * 6)); raf = requestAnimationFrame(meter); };
-      playing = { stop: () => { try { src.stop(); } catch { /* ended */ } } };
-      src.onended = () => { cancelAnimationFrame(raf); orb.setLevel(0); playing = null; res(); };
-      orb.setState("speaking"); meter();
-      src.start(0);
+      let raf = 0, done = false;
+      const t0 = performance.now();
+      const pulse = () => { const t = (performance.now() - t0) / 1000;      // the orb breathes with the speech
+        orb.setLevel(0.35 + 0.25 * Math.abs(Math.sin(t * 7.3)) + 0.15 * Math.abs(Math.sin(t * 3.1))); raf = requestAnimationFrame(pulse); };
+      const end = () => { if (done) return; done = true; cancelAnimationFrame(raf); orb.setLevel(0); playing = null;
+        URL.revokeObjectURL(url); res(); };
+      playing = { stop: () => { player.pause(); end(); } };
+      player.onended = end;
+      player.onerror = end;
+      player.src = url;
+      orb.setState("speaking"); pulse();
+      player.play().catch(end);
     });
   }
   // Sentences are fetched ahead (so there's no gap between them) but played strictly in order.
@@ -98,7 +113,7 @@ export function createPhone({ api, token, orb, toast, onText }) {
   async function listen() {
     if (rec) return rec.finish();                                     // tap again = done talking
     stop();
-    audio();
+    unlock();
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });

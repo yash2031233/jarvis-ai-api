@@ -10,7 +10,7 @@ class SlowBrain:
     def __init__(self):
         self.calls = 0
 
-    async def stream_turn(self, messages, tools=None, on_text=None, on_tool_call=None, cancel=None):
+    async def stream_turn(self, messages, tools=None, on_text=None, on_tool_call=None, cancel=None, **kw):
         self.calls += 1
         await asyncio.sleep(0.05)
         if self.calls == 1:

@@ -24,7 +24,7 @@ in Settings and pick a model. No subscription, no lock-in.
 - 🧠 **Bring your own model**: NVIDIA build.nvidia.com by default (free key), LM Studio or Ollama for fully local, or any OpenAI-compatible endpoint
 - 🖐️ **71 built-in tools**: apps, files, web, browser automation, screen reading and clicking, cameras, maps, media, timers, clipboard, shell, Python, weather, notes, skills - and every screen and setting of the app, so you can just ask
 - ⚡ **Instant commands**: "open Spotify", "volume 40", "timer 5 minutes" run in milliseconds with **no LLM call**
-- 🎙️ **Local voice**: "Hey Jarvis" wake word, Whisper speech-to-text, Kokoro or Pocket TTS, interrupt any time
+- 🎙️ **Local voice**: say "Jarvis" (or "Jarvis, open Spotify" in one go), Whisper speech-to-text, Kokoro or Pocket TTS, interrupt any time
 - 🔮 **The orb**: a real-time 3D (WebGL2) amber "molecular circuit" sphere that listens, thinks and speaks with you. Drag it to spin it
 - 🧭 **Maps & navigation**: "take me to the airport" → the fastest real route with a live ETA, then Google-Maps-style turn-by-turn that Jarvis **speaks before every turn**, reroutes when you miss one, and finds faster routes on the way. Nearby places, saved places, location reminders. Your phone is the GPS (through your own Telegram bot)
 - 🧊 **3D CAD**: "design a phone stand" → OpenSCAD model built, mesh-checked and visually self-reviewed, shown in a 3D viewer you can spin; tweak it by voice, STL export
@@ -82,7 +82,7 @@ has no desktop-window support, Jarvis opens in your browser instead.
 
 1. Get a free API key at **[build.nvidia.com](https://build.nvidia.com)** (or install [Ollama](https://ollama.com) for local models)
 2. Jarvis opens on the Settings screen: paste the key → **Save** → a model is picked for you
-3. Say **"Hey Jarvis"**, click the orb, or type
+3. Say **"Jarvis"**, click the orb, or type
 
 On first launch the voice models download once (~400 MB on CPU, ~2 GB with the GPU Whisper model).
 Blackwell GPUs (RTX 50-series / RTX PRO 6000) need a driver with CUDA 12.8+.

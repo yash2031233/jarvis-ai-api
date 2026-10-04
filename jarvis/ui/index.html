@@ -13,6 +13,7 @@
 <title>J.A.R.V.I.S.</title>
 <meta name="jarvis-token" content="__JARVIS_TOKEN__">
 <link rel="stylesheet" href="/ui/styles.css">
+<link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
 <script type="importmap">
 { "imports": { "three": "/ui/vendor/three/build/three.module.min.js", "three/addons/": "/ui/vendor/three/addons/" } }
 </script>
@@ -229,7 +230,7 @@
       <section>
         <h3>Voice</h3>
         <label class="switch"><input id="sVoice" type="checkbox"> Voice enabled</label>
-        <label class="switch"><input id="sWake" type="checkbox"> “Hey Jarvis” wake word</label>
+        <label class="switch"><input id="sWake" type="checkbox"> “Jarvis” wake word (say “Jarvis, …” or “Hey Jarvis”)</label>
         <label>Engine
           <select id="sEngine">
             <option value="auto">Auto (detect GPU)</option>
@@ -246,6 +247,10 @@
         </label>
         <label>Microphone
           <select id="sMic"><option value="">Default</option></select>
+        </label>
+        <label>Speaker
+          <div class="row"><select id="sSpeaker"><option value="">System default</option></select>
+            <button id="btnSpeakerTest" class="btn subtle" type="button">Test</button></div>
         </label>
         <label>Push-to-talk hotkey
           <input id="sHotkey" type="text" spellcheck="false">

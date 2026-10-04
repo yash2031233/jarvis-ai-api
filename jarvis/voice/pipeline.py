@@ -62,12 +62,68 @@ def list_input_devices() -> list[dict]:
         return []
 
 
+def list_output_devices() -> list[str]:
+    """Speakers / headphones, by name (indices change when devices come and go), one entry per device."""
+    try:
+        import sounddevice as sd
+
+        host = sd.default.hostapi
+        names = [d["name"] for d in sd.query_devices() if d["max_output_channels"] > 0 and d["hostapi"] == host]
+        return list(dict.fromkeys(names))
+    except Exception:
+        return []
+
+
+def output_index(name: str) -> int | None:
+    """The device index for a speaker name; None = the system default (also when it's unplugged)."""
+    if not name:
+        return None
+    try:
+        import sounddevice as sd
+
+        host = sd.default.hostapi
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_output_channels"] > 0 and d["name"] == name and d["hostapi"] == host:
+                return i
+    except Exception:
+        pass
+    return None
+
+
+def match_wake(text: str, phrase: str) -> str | None:
+    """'Jarvis, open Spotify' -> 'open Spotify'; 'Jarvis?' -> ''; anything not starting with the wake phrase -> None.
+    The phrase has to come first (or after "hey"/"ok"), so "I told Jarvis…" in a conversation doesn't wake him, and
+    small transcription slips count ("Jarvis" / "Jervis" / "Jarvis's")."""
+    import re
+
+    from rapidfuzz import fuzz
+
+    phrase = phrase.strip().lower()
+    if not phrase or not text:
+        return None
+    n = len(phrase.split())
+    words = list(re.finditer(r"[A-Za-z']+", text))
+    starts = [0]
+    if words and words[0].group(0).lower() in ("hey", "hi", "ok", "okay", "yo", "oh", "um", "uh", "so"):
+        starts.append(1)
+    for i in starts:
+        group = words[i:i + n]
+        if len(group) < n:
+            break
+        said = " ".join(w.group(0).lower() for w in group).removesuffix("'s")
+        if fuzz.ratio(said, phrase) >= 80:
+            return text[group[-1].end():].lstrip(" ,.!?:;-").strip()
+    return None
+
+
 class VoicePipeline:
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
         self.stt = STT()
         self.tts = TTS()
         self.wake = None
+        self._wake_phrase = ""
+        self._spotting = False
         self.ready = False
         self.status = "off"
         self.error = ""
@@ -94,10 +150,12 @@ class VoicePipeline:
         try:
             self._set_status("loading")
             self.tts.voice, self.tts.speed = s.tts_voice, s.tts_speed
+            self.tts.output_device = output_index(s.speaker_device)
             self.tts.on_idle = lambda: self._after_speech()
             self.tts.load()
             self.stt.load(s.voice_engine)
             if s.wake_word:
+                self._wake_phrase = (s.wake_phrase or "").strip()
                 try:
                     self._load_wake()
                 except Exception as e:
@@ -184,6 +242,10 @@ class VoicePipeline:
         listen_started = 0.0
         last_level_emit = 0.0
 
+        spot: list[np.ndarray] | None = None   # an utterance being collected to check for the wake phrase
+        spot_sil = 0
+        spot_t0 = 0.0
+
         while not self._stop.is_set():
             try:
                 raw = self._frames.get(timeout=0.5)
@@ -210,7 +272,21 @@ class VoicePipeline:
                     if max(scores.values(), default=0) > 0.5:
                         woke = True
                         self.wake.reset()
+                # "Jarvis …": speech in the room is transcribed a phrase at a time (fast on a GPU) and checked
+                if not woke and self._wake_phrase and not self._spotting:
+                    if spot is None:
+                        if rms > max(0.015, noise * 3.5):
+                            spot, spot_sil, spot_t0 = list(pre_roll), 0, now
+                    else:
+                        spot.append(frame)
+                        spot_sil = 0 if rms > max(0.012, noise * 3.0) else spot_sil + 80
+                        if spot_sil >= 560 or now - spot_t0 > 6:
+                            audio, spot = np.concatenate(spot), None
+                            if len(audio) > SR * 0.35:
+                                self._spotting = True
+                                threading.Thread(target=self._spot, args=(audio,), daemon=True).start()
                 if woke:
+                    spot = None
                     self.interrupt()
                     self.mode = "listening"
                     speech = []
@@ -264,6 +340,25 @@ class VoicePipeline:
                     self.mode = "idle"
                     self._ptt.set()
 
+    def _spot(self, audio: np.ndarray) -> None:
+        try:
+            text = self.stt.transcribe(audio, prompt="Jarvis")
+            rest = match_wake(text, self._wake_phrase)
+            if rest is None or self.mode != "idle":
+                return
+            if len(rest.split()) >= 2:            # "Jarvis, open Spotify": the request came with the name
+                self.interrupt()
+                self.mode = "processing"
+                orb_state("thinking")
+                bus.emit("transcript", text=rest, ms=0)
+                threading.Thread(target=self._process_text, args=(rest,), daemon=True).start()
+            else:                                 # just "Jarvis": listen for the request
+                self._ptt.set()
+        except Exception as e:
+            log.debug("wake phrase check failed: %s", e)
+        finally:
+            self._spotting = False
+
     async def _cancel_agent(self) -> None:
         from ..agent.engine import agent
 
@@ -277,6 +372,9 @@ class VoicePipeline:
             log.warning("transcription failed: %s", e)
             text = ""
         bus.emit("transcript", text=text, ms=int((time.time() - t0) * 1000))
+        self._process_text(text)
+
+    def _process_text(self, text: str) -> None:
         if not text:
             self.mode = "idle"
             orb_state("idle")

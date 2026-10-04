@@ -18,7 +18,7 @@ class FakeBrain:
         self.turns = list(turns)
         self.seen = []
 
-    async def stream_turn(self, messages, tools=None, on_text=None, on_tool_call=None, cancel=None):
+    async def stream_turn(self, messages, tools=None, on_text=None, on_tool_call=None, cancel=None, no_think=False):
         self.seen.append(messages)
         t = self.turns.pop(0)
         if t.text and on_text:
@@ -117,7 +117,7 @@ def test_empty_turn_is_retried_with_a_nudge(agent, monkeypatch):
 
 def test_empty_turns_never_give_a_silent_reply(agent, monkeypatch):
     fake = FakeBrain([TurnResult(tool_calls=[ToolCall("calculate", {"expression": "6*7"})])]
-                     + [TurnResult(text="") for _ in range(3)])
+                     + [TurnResult(text="") for _ in range(4)])
     reply = _run(agent, fake, "work out six times seven quietly", monkeypatch)
     assert reply and "calculate" in reply
     from jarvis.memory.store import memory

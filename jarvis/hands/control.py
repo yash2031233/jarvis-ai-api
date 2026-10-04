@@ -21,6 +21,7 @@ SETTABLE: dict[str, str] = {
     "voice_enabled": "voice on/off (listening + speaking)",
     "tts_voice": "speaking voice id (see `voices`)",
     "tts_speed": "speaking speed, 0.6-1.6",
+    "speaker_device": "speaker/headphones to talk through, by name (empty = system default)",
     "wake_word": "listen for 'Hey Jarvis'",
     "fast_path": "instant local commands without a model call",
     "proactive": "speak up about rain, tomorrow's tests, battery…",

@@ -30,7 +30,7 @@ from . import context, learning, skills
 
 log = logging.getLogger(__name__)
 
-MAX_EMPTY_RETRIES = 2
+MAX_EMPTY_RETRIES = 3
 EMPTY_NUDGE = ("(system) Your last turn came back empty. Do it now: call the tool(s) the request needs, "
                 "or answer the user directly. Don't return an empty message.")
 
@@ -258,9 +258,11 @@ class Agent:
                 self._emit("delta", text=delta)
                 splitter.feed(delta)
 
+            if empty_turns:   # broken turns come in bursts on some providers: give it a moment before retrying
+                await asyncio.sleep(min(4.0, 1.0 * empty_turns))
             result = await brain.stream_turn(
                 msgs, registry.schemas(tool_names), on_text=on_text, on_tool_call=on_tool_call,
-                cancel=self.cancel_event,
+                cancel=self.cancel_event, no_think=empty_turns > 0,
             )
             if result.finish_reason == "cancelled":
                 for tsk in early.values():
@@ -271,6 +273,8 @@ class Agent:
                 if not result.text.strip() and empty_turns < MAX_EMPTY_RETRIES:
                     empty_turns += 1
                     log.info("empty model turn (finish=%s); retrying (%d)", result.finish_reason, empty_turns)
+                    if empty_turns == 1:
+                        self._emit("ack", text="One moment…")
                     continue
                 splitter.flush()
                 final_text = result.text.strip()
@@ -405,7 +409,8 @@ class Agent:
         if steps_done:
             names = list(dict.fromkeys(st["tool"].replace("_", " ") for st in steps_done))
             return f"Done ({', '.join(names[:4])}), but the model didn't say anything about it."
-        return "The model sent back an empty reply three times. Try again, or pick another model in Settings."
+        return ("The model provider keeps sending back broken replies right now. Try again in a minute, "
+                "or switch models in Settings.")
 
     @staticmethod
     def _brain_error_reply(e: BrainError) -> str:

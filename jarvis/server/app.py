@@ -309,6 +309,9 @@ def apply_settings() -> None:
     vp = state["voice"]
     if vp:
         vp.tts.voice, vp.tts.speed = s.tts_voice, s.tts_speed
+        from ..voice.pipeline import output_index
+
+        vp.tts.output_device = output_index(s.speaker_device)
         if s.tts_voice.startswith("pocket:") and vp.tts.pocket is None:
             threading.Thread(target=vp.tts._load_pocket, daemon=True, name="pocket-load").start()
     if s.voice_enabled and not vp:
@@ -392,11 +395,11 @@ async def skills_list():
 @app.get("/api/devices")
 async def devices():
     try:
-        from ..voice.pipeline import list_input_devices
+        from ..voice.pipeline import list_input_devices, list_output_devices
 
-        return {"inputs": list_input_devices()}
+        return {"inputs": list_input_devices(), "outputs": list_output_devices()}
     except Exception:
-        return {"inputs": []}
+        return {"inputs": [], "outputs": []}
 
 
 # ---------------------------------------------------------------------------- CAD

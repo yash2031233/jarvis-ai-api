@@ -265,7 +265,7 @@ ${ev.result}`);
 function updateMic() {
   const ready = voiceStatus === "ready";
   $("btnMic").classList.toggle("off", !ready);
-  $("btnMic").title = ready ? (REMOTE ? "Tap to talk" : "Talk (or say “Hey Jarvis”)") : `Voice: ${voiceStatus}`;
+  $("btnMic").title = ready ? (REMOTE ? "Tap to talk" : "Talk (or say “Jarvis”)") : `Voice: ${voiceStatus}`;
 }
 
 // ------------------------------------------------------------------ prompt + mic
@@ -514,6 +514,9 @@ $("sEngine").onchange = () => { save({ voice_engine: $("sEngine").value }); toas
 $("sTtsVoice").onchange = () => save({ tts_voice: $("sTtsVoice").value });
 $("sSpeed").oninput = () => ($("speedOut").textContent = `${$("sSpeed").value}×`);
 $("sSpeed").onchange = () => save({ tts_speed: +$("sSpeed").value });
+$("sSpeaker").onchange = async () => { await save({ speaker_device: $("sSpeaker").value }); api("/api/geo/say", { method: "POST", body: { text: "This is how I sound." } }).catch(() => {}); };
+$("btnSpeakerTest").onclick = () => api("/api/geo/say", { method: "POST", body: { text: "Testing. Can you hear me?" } })
+  .then((r) => { if (!r.spoken) toast("Voice isn't loaded yet.", "warn"); }).catch(() => {});
 $("sMic").onchange = () => { save({ mic_device: $("sMic").value === "" ? null : +$("sMic").value }); toast("Restart Jarvis to switch microphones."); };
 $("sHotkey").onchange = () => { save({ hotkey: $("sHotkey").value.trim() }); toast("Restart Jarvis to apply the new hotkey."); };
 $("sFast").onchange = () => save({ fast_path: $("sFast").checked });
@@ -557,10 +560,13 @@ $("btnUndo").onclick = async () => {
   loadUndo();
 };
 async function loadDevices() {
-  const { inputs } = await api("/api/devices");
+  const { inputs, outputs = [] } = await api("/api/devices");
   const sel = $("sMic");
   sel.replaceChildren(new Option("Default / auto", ""), ...inputs.map((d) => new Option(d.name, d.index)));
   sel.value = settings.mic_device ?? "";
+  const sp = $("sSpeaker");
+  sp.replaceChildren(new Option("System default", ""), ...outputs.map((n) => new Option(n, n)));
+  sp.value = settings.speaker_device || "";
 }
 
 // ------------------------------------------------------------------ window controls (pywebview)
@@ -938,6 +944,7 @@ const mapview = createMap({
   onClose() { if (document.body.dataset.mode === "map") delete document.body.dataset.mode; },
 });
 $("btnMap").addEventListener("click", () => (mapview.isOpen ? mapview.close() : mapview.open()));
+mapview.prewarm();
 
 // ------------------------------------------------------------------ the show_panel tool: Jarvis opens a screen
 function openPanel(p) {

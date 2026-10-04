@@ -41,3 +41,15 @@ def test_routes(text, tool, args):
 ])
 def test_falls_through_to_agent(text):
     assert route(text) is None
+
+
+def test_wake_phrase_matching():
+    from jarvis.voice.pipeline import match_wake
+
+    assert match_wake("Jarvis, open Spotify.", "jarvis") == "open Spotify."
+    assert match_wake("Jarvis?", "jarvis") == ""
+    assert match_wake("Hey Jarvis what time is it", "jarvis") == "what time is it"
+    assert match_wake("Jervis turn it down", "jarvis") == "turn it down"
+    assert match_wake("I told Jarvis about it", "jarvis") is None
+    assert match_wake("Okay so Travis said", "jarvis") is None
+    assert match_wake("Jarvis", "") is None

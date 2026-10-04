@@ -45,14 +45,14 @@ class STT:
                 log.warning("STT %s/%s failed: %s", name, device, e)
         raise RuntimeError(f"Speech recognition failed to load: {last_err}")
 
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray, prompt: str | None = None) -> str:
         if self.model is None:
             raise RuntimeError("STT not loaded")
         with self._lock:
             segments, _info = self.model.transcribe(
                 audio.astype(np.float32), language="en", beam_size=1 if self.device == "cpu" else 3,
                 vad_filter=True, vad_parameters={"min_silence_duration_ms": 300},
-                condition_on_previous_text=False, without_timestamps=True,
+                condition_on_previous_text=False, without_timestamps=True, initial_prompt=prompt,
             )
             text = " ".join(s.text.strip() for s in segments).strip()
         # Whisper hallucinations on silence

@@ -9,7 +9,7 @@
 // speed. Jarvis speaks the turns in his own voice ("In half a mile, turn right onto Route 9" ... "Turn right onto
 // Route 9"), how far to go after each one, re-routes when you leave the route, and says when you've arrived.
 const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";   // keyless; darkened in CSS
-const LEAFLET = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/";
+const LEAFLET = "/ui/vendor/leaflet/";                         // bundled: no download when the map first opens
 
 export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
   const $ = (s) => document.querySelector(s);
@@ -29,7 +29,12 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
     });
   }
 
-  async function ensure() {
+  let building = null;
+  function ensure() {                         // one map, however many callers race to it (prewarm + first route)
+    if (!building) building = build().catch((e) => { building = null; throw e; });
+    return building;
+  }
+  async function build() {
     if (map) return map;
     L = await loadLeaflet();
     // no tile fade-in: the follow-cam moves the map every frame, which keeps restarting the fade (tiles stayed invisible)
@@ -164,6 +169,9 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
       el.innerHTML = `<div class="kicker">Places · ${liveTag}</div>
         <ol class="hits">${pl.map((p) => `<li><b>★</b><div><div>${esc(p.name)}</div><small>${esc(p.address || "")}</small></div></li>`).join("") || "<li><small>No saved places yet - say “save this as home”.</small></li>"}</ol>
         ${rm.length ? `<div class="kicker" style="margin-top:10px">Reminders</div><ol class="hits">${rm.map((r) => `<li><b>⏰</b><div><div>${esc(r.text)}</div><small>${r.on === "leave" ? "leaving" : "at"} ${esc(r.place)}</small></div></li>`).join("")}</ol>` : ""}`;
+    } else if (s.routing) {
+      el.innerHTML = `<div class="kicker">Route · ${liveTag}</div><div class="dest">${esc(s.routing)}</div>
+        <div class="bar"><i class="routing"></i></div><small class="hint">Finding the fastest way…</small>`;
     } else {
       el.innerHTML = `<div class="kicker">${s.view === "trip" ? "Today's trail" : "You are here"} · ${liveTag}</div>
         <div class="dest">${esc(s.address || (me ? `${me.lat.toFixed(5)}, ${me.lon.toFixed(5)}` : "Waiting for your location"))}</div>
@@ -206,12 +214,19 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
     else if (pts.length === 1) map.setView(pts[0], s.view === "me" ? (s.me && s.me.approx ? 11 : 16) : 15);
   }
 
+  // Get everything ready before it's needed: the library and the map are set up in the background when the app
+  // starts, so the first route opens instantly.
+  function prewarm() {
+    const go = () => ensure().catch(() => {});
+    if ("requestIdleCallback" in window) requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 1500);
+  }
+
   async function show(s, { autostart = true } = {}) {
     onOpen();
     try { await ensure(); } catch (e) { $("#mapCard").innerHTML = `<div class="dest">${esc(e.message)}</div>`; return; }
     if (s.units) units = s.units;
     if (s.voice !== undefined) voiceOn = s.voice;
-    state = { ...state, ...s };
+    state = { ...state, routing: null, ...s };
     if (s.view !== "route") state.route = s.route;
     followMe = true;
     $("#mapMe").classList.remove("off");
@@ -551,5 +566,5 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
     return { start, stop, fix, localFresh, get on() { return N.on; } };
   })();
 
-  return { show, open, close, geo, nav, get isOpen() { return document.body.dataset.mode === "map"; } };
+  return { show, open, close, geo, nav, prewarm, get isOpen() { return document.body.dataset.mode === "map"; } };
 }
