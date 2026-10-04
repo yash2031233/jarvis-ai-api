@@ -718,16 +718,27 @@ async def camera_stream(cid: str, request: Request):
         raise HTTPException(404, str(e))
 
     async def gen():
+        # every new frame as soon as it arrives (up to 25 fps); cameras read as MJPEG (the robot car) are passed
+        # through untouched - no decode / re-encode, no added delay
         boundary = b"--frame\r\n"
+        last = 0.0
         while not await request.is_disconnected():
+            t0 = time.time()
             try:
                 img = await asyncio.to_thread(cam.frame, 0.5)
-                jpg = await asyncio.to_thread(cams.encode_jpeg, img, 75, 960)
+                jpg, ts = cam.latest_jpeg(last)
+                if jpg is None:
+                    if cam._ts <= last and cam._mode != "snapshot":
+                        await asyncio.sleep(0.01)
+                        continue
+                    ts = cam._ts or time.time()
+                    jpg = await asyncio.to_thread(cams.encode_jpeg, img, 75, 960)
+                last = ts
             except Exception:
                 await asyncio.sleep(1)
                 continue
             yield boundary + b"Content-Type: image/jpeg\r\nContent-Length: " + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n"
-            await asyncio.sleep(1 / 12)
+            await asyncio.sleep(max(0.0, 1 / 25 - (time.time() - t0)))
 
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame",
                              headers={"Cache-Control": "no-store"})

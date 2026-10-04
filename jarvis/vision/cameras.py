@@ -50,6 +50,7 @@ class Camera:
     _cap: Any = None
     _thread: threading.Thread | None = None
     _frame: np.ndarray | None = None
+    _jpeg: bytes | None = None
     _ts: float = 0.0
     _last_use: float = 0.0
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -77,6 +78,10 @@ class Camera:
         url = self.url
         if not url:
             raise CameraError(f"Camera '{self.name}' has no address.")
+        if self.kind == "car":
+            # the car streams MJPEG on :81/stream (~20 fps); one photo per request (/capture) is the fallback
+            self._mode = "mjpeg"
+            return
         if url.lower().startswith("http") and self._is_snapshot(url):
             self._mode = "snapshot"
             return
@@ -104,6 +109,54 @@ class Camera:
         except Exception:
             return False
 
+    def _mjpeg_reader(self) -> None:
+        """Read an MJPEG stream by its JPEG markers - lighter and lower-latency than going through ffmpeg - and keep
+        the newest frame both decoded and as the original JPEG (the live view passes that straight through)."""
+        import httpx
+
+        cv2 = _cv2()
+        host = self.url.split("//", 1)[1].split("/", 1)[0].split(":")[0]
+        stream_url = f"http://{host}:81/stream"
+        params = {"token": config.get_secret("robot_token")} if self.kind == "car" else None
+        try:
+            with httpx.stream("GET", stream_url, params=params, timeout=httpx.Timeout(5, read=10)) as r:
+                if r.status_code != 200:
+                    raise CameraError(f"stream answered {r.status_code}")
+                buf = b""
+                for chunk in r.iter_raw():                 # as it arrives - a fixed chunk size waits for it to fill
+                    if time.time() - self._last_use > IDLE_RELEASE or self._mode != "mjpeg":
+                        break
+                    buf += chunk
+                    end = buf.rfind(b"\xff\xd9")
+                    if end < 0:
+                        if len(buf) > 2_000_000:
+                            buf = b""
+                        continue
+                    start = buf.rfind(b"\xff\xd8", 0, end)
+                    if start >= 0:
+                        jpg = buf[start:end + 2]
+                        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+                        if img is not None:
+                            with self._lock:
+                                self._frame, self._jpeg, self._ts = img, jpg, time.time()
+                    buf = buf[end + 2:]
+        except Exception as e:
+            if self._frame is None:
+                self._mode = "snapshot"          # no stream from this car: fall back to one photo per request
+            else:
+                self._error = f"The car's video stopped: {e}"
+        finally:
+            self._thread = None
+            if self._mode == "mjpeg":
+                self._mode = ""                   # reopen on the next request
+
+    def latest_jpeg(self, after: float = 0.0) -> tuple[bytes | None, float]:
+        """The newest original JPEG (streams read by marker only) if it's newer than `after`."""
+        with self._lock:
+            if self._jpeg is not None and self._ts > after:
+                return self._jpeg, self._ts
+        return None, self._ts
+
     def _reader(self) -> None:
         fails = 0
         while True:
@@ -126,6 +179,8 @@ class Camera:
         self.release()
 
     def release(self) -> None:
+        if self._mode == "mjpeg":
+            self._mode = ""                       # the stream reader stops at its next chunk
         cap, self._cap = self._cap, None
         if cap is not None:
             try:
@@ -138,14 +193,17 @@ class Camera:
     def frame(self, max_age: float = 1.0, timeout: float = 8.0) -> np.ndarray:
         """The newest frame (BGR). Opens the camera if needed."""
         self._last_use = time.time()
-        if self.kind == "car" or (self.kind == "ip" and self._mode == "snapshot"):
+        if self._mode == "snapshot":
             return self._snapshot()
-        if self._cap is None:
+        if self._mode == "mjpeg" and self._thread is None:
+            self._mode = ""
+        if self._cap is None and self._thread is None:
             self._error = ""
             self._open()
             if self._mode == "snapshot":
                 return self._snapshot()
-            self._thread = threading.Thread(target=self._reader, daemon=True, name=f"cam-{self.id}")
+            target = self._mjpeg_reader if self._mode == "mjpeg" else self._reader
+            self._thread = threading.Thread(target=target, daemon=True, name=f"cam-{self.id}")
             self._thread.start()
         t0 = time.time()
         while time.time() - t0 < timeout:
@@ -154,6 +212,8 @@ class Camera:
                     return self._frame.copy()
             if self._error:
                 raise CameraError(self._error)
+            if self._mode == "snapshot":         # the stream wasn't there after all
+                return self._snapshot()
             time.sleep(0.03)
         raise CameraError(f"No picture from '{self.name}' within {timeout:.0f}s.")
 
