@@ -12,5 +12,7 @@ self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", (e) => {
   if (e.request.mode !== "navigate") return;
-  e.respondWith(fetch(e.request).catch(() => new Response(OFFLINE, { headers: { "Content-Type": "text/html" } })));
+  const offline = () => new Response(OFFLINE, { headers: { "Content-Type": "text/html" } });
+  // Tailscale answers 502 with an empty page when Jarvis isn't running on the PC: show the message instead
+  e.respondWith(fetch(e.request).then((r) => (r.status >= 500 ? offline() : r)).catch(offline));
 });
