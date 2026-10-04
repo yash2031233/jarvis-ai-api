@@ -1,6 +1,6 @@
 # Jarvis installer for Windows. Run by Jarvis.exe on first launch (or manually).
 # Installs Python if needed, creates .venv, installs Jarvis, adds shortcuts, starts it.
-param([switch]$Reinstall, [switch]$NoLaunch)
+param([switch]$Reinstall, [switch]$NoLaunch, [switch]$NoShortcuts)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -80,7 +80,7 @@ if ($LASTEXITCODE -ne 0) { Fail "package installation failed (see the error abov
 # ------------------------------------------------------------------ 4. shortcuts
 Step 4 "Adding Desktop and Start Menu shortcuts"
 $Exe = Join-Path $Root "Jarvis.exe"
-try {
+if ($NoShortcuts) { Say "Skipped (-NoShortcuts)" "DarkGray" } else { try {
   $shell = New-Object -ComObject WScript.Shell
   foreach ($dir in @([Environment]::GetFolderPath("Desktop"), (Join-Path ([Environment]::GetFolderPath("StartMenu")) "Programs"))) {
     $lnk = $shell.CreateShortcut((Join-Path $dir "Jarvis.lnk"))
@@ -91,7 +91,7 @@ try {
     $lnk.Save()
   }
   Say "Shortcuts created" "DarkGray"
-} catch { Say "Couldn't create shortcuts ($_) - you can still use Jarvis.exe" "DarkGray" }
+} catch { Say "Couldn't create shortcuts ($_) - you can still use Jarvis.exe" "DarkGray" } }
 
 Set-Content -Path $Marker -Value (Get-Date -Format o)
 
@@ -100,4 +100,4 @@ Step 5 "Starting Jarvis"
 Say "Voice models download on first start (shown in the app)." "DarkGray"
 Say "Next time just double-click Jarvis (Desktop / Start Menu / Jarvis.exe)." "DarkGray"
 if (-not $NoLaunch) { Start-Process -FilePath $VenvPyw -ArgumentList "-m", "jarvis" -WorkingDirectory $Root }
-Start-Sleep -Seconds 4
+if (-not $NoLaunch) { Start-Sleep -Seconds 4 }

@@ -52,16 +52,18 @@ def _wait_up(port: int, timeout: float = 20) -> None:
 class WindowApi:
     """Exposed to the UI as window.pywebview.api (frameless window controls)."""
 
+    # Underscore attributes are hidden from pywebview, which otherwise walks the whole
+    # native window object when exposing the API to JavaScript.
     def __init__(self) -> None:
-        self.window = None
+        self._window = None
 
     def minimize(self) -> None:
-        if self.window:
-            self.window.minimize()
+        if self._window:
+            self._window.minimize()
 
     def close(self) -> None:
-        if self.window:
-            self.window.destroy()
+        if self._window:
+            self._window.destroy()
 
 
 def _hotkey(window, hotkey: str) -> None:
@@ -173,7 +175,7 @@ def main() -> None:
         "J.A.R.V.I.S.", url, width=1100, height=820, min_size=(520, 600),
         background_color="#050302", frameless=True, easy_drag=False, js_api=win_api,
     )
-    win_api.window = window
+    win_api._window = window
     s = config.store.load()
     _tray(window, url)
     _hotkey(window, s.hotkey)

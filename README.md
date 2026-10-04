@@ -31,23 +31,50 @@ in Settings and pick a model. No subscription, no lock-in.
 
 ## Quick start
 
+### Windows: double-click
+
+```bash
+git clone https://github.com/yash2031233/jarvis-ai-api
+```
+
+Then open the folder and **double-click `Jarvis.exe`**.
+
+- **First time:** a setup window installs everything (Python too, if you don't have it), adds **Jarvis** to your
+  Desktop and Start Menu, and starts it. Takes a few minutes.
+- **After that:** `Jarvis.exe` (or the shortcut) just starts Jarvis.
+- NVIDIA GPUs are detected automatically and get GPU speech recognition.
+
+> `Jarvis.exe` is a tiny open-source launcher ([source](installer/Launcher.cs), rebuild with
+> `installer\build-launcher.ps1`). It runs [`installer/install.ps1`](installer/install.ps1) on first launch.
+> If you downloaded the repo as a ZIP instead of cloning, Windows SmartScreen may warn about an unrecognised app:
+> click **More info → Run anyway**.
+
+### macOS / Linux
+
 ```bash
 git clone https://github.com/yash2031233/jarvis-ai-api
 cd jarvis-ai-api
-python -m venv .venv
-# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
-pip install -e ".[all]"
-jarvis
+./install.sh
 ```
+
+### Then
 
 1. Get a free API key at **[build.nvidia.com](https://build.nvidia.com)** (or install [Ollama](https://ollama.com) for local models)
 2. Jarvis opens on the Settings screen: paste the key → **Save** → a model is picked for you
 3. Say **"Hey Jarvis"**, click the orb, or type
 
 On first launch the voice models download once (~400 MB on CPU, ~2 GB with the GPU Whisper model).
+Blackwell GPUs (RTX 50-series / RTX PRO 6000) need a driver with CUDA 12.8+.
 
-**NVIDIA GPU?** Add `pip install -e ".[gpu]"` for GPU speech recognition (Whisper large-v3-turbo, ~130 ms per sentence).
-Blackwell cards (RTX 50-series / RTX PRO 6000) need a driver with CUDA 12.8+.
+<details><summary>Manual install (developers)</summary>
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
+pip install -e ".[all]"          # add ,gpu for NVIDIA GPU speech recognition
+jarvis
+```
+</details>
 
 Other launch options: `jarvis --browser` (UI in your browser), `jarvis --headless` (server only),
 `jarvis --no-voice`, `jarvis -v` (debug logs).
