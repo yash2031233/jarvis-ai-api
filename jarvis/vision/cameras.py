@@ -43,7 +43,7 @@ def _cv2():
 class Camera:
     id: str
     name: str
-    kind: str  # "device" | "ip"
+    kind: str  # "device" | "ip" | "car" (the robot car's own camera)
     device: int = 0
     url: str = ""
     # runtime
@@ -138,7 +138,7 @@ class Camera:
     def frame(self, max_age: float = 1.0, timeout: float = 8.0) -> np.ndarray:
         """The newest frame (BGR). Opens the camera if needed."""
         self._last_use = time.time()
-        if self.kind == "ip" and self._mode == "snapshot":
+        if self.kind == "car" or (self.kind == "ip" and self._mode == "snapshot"):
             return self._snapshot()
         if self._cap is None:
             self._error = ""
@@ -161,12 +161,22 @@ class Camera:
         import httpx
 
         cv2 = _cv2()
-        try:
-            r = httpx.get(self.url, timeout=8, follow_redirects=True)
-            r.raise_for_status()
-        except Exception as e:
-            raise CameraError(f"Couldn't get a picture from {config.mask_url(self.url)}: {e}") from e
-        img = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_COLOR)
+        headers = {"X-Token": config.get_secret("robot_token")} if self.kind == "car" else None
+        img = None
+        for _ in range(3 if self.kind == "car" else 1):
+            try:
+                r = httpx.get(self.url, timeout=8, follow_redirects=True, headers=headers)
+                r.raise_for_status()
+            except Exception as e:
+                if self.kind == "car":
+                    raise CameraError("The robot car isn't answering - is it switched on?") from e
+                raise CameraError(f"Couldn't get a picture from {config.mask_url(self.url)}: {e}") from e
+            data = r.content.rstrip(b"\x00")
+            if self.kind == "car" and data[-2:] != b"\xff\xd9":
+                continue                       # the car's camera now and then sends a JPEG cut short: take another
+            img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                break
         if img is None:
             raise CameraError("The camera's reply wasn't an image.")
         with self._lock:
@@ -176,7 +186,8 @@ class Camera:
     def info(self) -> dict[str, Any]:
         return {"id": self.id, "name": self.name, "kind": self.kind,
                 "device": self.device if self.kind == "device" else None,
-                "address": config.mask_url(self.url) if self.kind == "ip" else None,
+                "address": config.mask_url(self.url) if self.kind == "ip" else
+                self.url.rsplit("/", 1)[0].replace("http://", "") if self.kind == "car" else None,
                 "open": self._cap is not None}
 
 
@@ -191,6 +202,8 @@ class Hub:
         # the built-in/first webcam is always there unless a direct camera was set up or it was removed
         if s.auto_webcam and not any(c.get("kind") == "device" for c in cams):
             cams.insert(0, dict(AUTO_WEBCAM))
+        if s.robot_host:                       # the robot car's camera, once the car has been found
+            cams.append({"id": "car", "name": "Robot car", "kind": "car"})
         return cams
 
     def all(self) -> list[Camera]:
@@ -202,7 +215,8 @@ class Hub:
                     self.cams.pop(cid).release()
             for c in wanted:
                 cam = self.cams.get(c["id"])
-                url = config.get_secret(f"camera:{c['id']}") if c.get("kind") == "ip" else ""
+                url = (config.get_secret(f"camera:{c['id']}") if c.get("kind") == "ip" else
+                       f"http://{config.store.load().robot_host}/capture" if c.get("kind") == "car" else "")
                 if cam is None or cam.kind != c["kind"] or cam.device != c.get("device", 0) or cam.url != url:
                     if cam:
                         cam.release()
