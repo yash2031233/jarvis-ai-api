@@ -90,15 +90,20 @@ async def lifespan(app: FastAPI):
     from .. import proactive
 
     proactive_task = asyncio.create_task(proactive.loop(lambda: agent.busy.locked()))
-    from .. import telegram
+    from .. import devices, telegram
 
     telegram.start()
+    asyncio.get_running_loop().run_in_executor(None, devices.auto_setup)   # printers / robot car, verified
+    from .. import push
+
+    push_task = asyncio.create_task(push.loop())
     start_voice()
     log.info("Jarvis %s ready - %d tools, plugins: %s", __version__, len(registry.tools), state["plugins"])
     yield
     collector.cancel()
     keeper_task.cancel()
     proactive_task.cancel()
+    push_task.cancel()
     if state["voice"]:
         state["voice"].shutdown()
 
@@ -212,6 +217,58 @@ def _decode_audio(data: bytes):
         for f in res.resample(None):
             out.append(f.to_ndarray().reshape(-1))
     return (np.concatenate(out).astype(np.float32) / 32768.0) if out else np.zeros(0, np.float32)
+
+
+DEVICE_SECRETS = ("printer_serial", "printer_code", "printer_api_key", "robot_token")
+
+
+@app.get("/api/secrets")
+async def secrets_status():
+    return {n: bool(config.get_secret(n)) for n in DEVICE_SECRETS}
+
+
+@app.post("/api/secrets")
+async def secrets_set(body: dict[str, Any]):
+    """Device keys only (printer serial / check code / API key, robot car token); an empty value keeps the old one."""
+    for n, v in body.items():
+        if n in DEVICE_SECRETS and isinstance(v, str) and v.strip():
+            config.set_secret(n, v.strip())
+    return {n: bool(config.get_secret(n)) for n in DEVICE_SECRETS}
+
+
+@app.get("/api/push")
+async def push_info():
+    from .. import push
+
+    return {"key": await asyncio.to_thread(push.public_key), "phones": push.count()}
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(body: dict[str, Any]):
+    from .. import push
+
+    if not (isinstance(body.get("endpoint"), str) and body["endpoint"].startswith("https://")):
+        raise HTTPException(400, "not a push subscription")
+    n = push.subscribe(body)
+    await asyncio.to_thread(push.send, "Jarvis", "Notifications are on ✓", "/", "welcome")
+    return {"phones": n}
+
+
+@app.post("/api/push/test")
+async def push_test():
+    from .. import push
+
+    return {"sent": await asyncio.to_thread(push.send, "Jarvis", "Test notification - this is how I'll reach you.")}
+
+
+@app.get("/api/devices/scan")
+async def devices_scan(setup: bool = True):
+    from .. import devices
+
+    found = await asyncio.to_thread(devices.scan)
+    if setup:
+        found["set_up"] = devices.apply(found)
+    return found
 
 
 @app.post("/api/voice/transcribe")
@@ -813,6 +870,14 @@ async def vault_keep_now():
         return {"filed": await keeper.run_once(force=True)}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@app.get("/api/hub")
+async def hub_snapshot():
+    from .. import hub
+
+    vp = state["voice"]
+    return await asyncio.to_thread(hub.snapshot, vp.status if vp else "off")
 
 
 @app.get("/api/stats")

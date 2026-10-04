@@ -28,6 +28,12 @@
       <button id="btnStudy" class="icon-btn" title="Study" aria-label="Study">
         <svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></svg>
       </button>
+      <button id="btnHub" class="icon-btn" title="Dashboard" aria-label="Dashboard">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="9" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="5" rx="1.5"/><rect x="13.5" y="11" width="7.5" height="10" rx="1.5"/><rect x="3" y="15" width="7.5" height="6" rx="1.5"/></svg>
+      </button>
+      <button id="btnHands" class="icon-btn" title="Hand control (webcam)" aria-label="Hand control">
+        <svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4a1.5 1.5 0 0 1 3 0v8M14 11.5V6a1.5 1.5 0 0 1 3 0v8.5a6.5 6.5 0 0 1-6.5 6.5h-.6a6 6 0 0 1-4.6-2.2L3.6 15.4a1.5 1.5 0 0 1 2.3-1.9L8 15.5"/></svg>
+      </button>
       <button id="btnMap" class="icon-btn" title="Map" aria-label="Map">
         <svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
       </button>
@@ -122,6 +128,15 @@
       <div id="camMsg" class="camMsg"></div>
       <ul id="camFeed" class="camFeed" aria-label="What Jarvis saw"></ul>
       <button id="camClose" class="icon-btn mvClose" title="Close camera" aria-label="Close camera">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </section>
+
+    <!-- hub mode: everything at a glance (hub.js) -->
+    <section id="hubView" aria-label="Dashboard">
+      <div class="hubHead"><h2>Dashboard</h2><span id="hubTime" class="muted small"></span></div>
+      <div id="hubGrid" class="hubGrid"></div>
+      <button id="hubClose" class="icon-btn mvClose" title="Close dashboard" aria-label="Close dashboard">
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </section>
@@ -282,6 +297,38 @@
             <span id="camAddMsg" class="muted small"></span></div>
         </details>
         <img id="camTestImg" class="cam-test hidden" alt="Camera test picture">
+      </section>
+
+      <section id="phoneSection" class="phone-only">
+        <h3>Phone notifications</h3>
+        <p class="muted small">Reminders, finished jobs and Jarvis speaking up arrive on this phone even when the app is
+          closed. iPhone: open Jarvis from the Home Screen first.</p>
+        <div class="row"><button id="btnPush" class="btn primary" type="button">Turn on notifications</button>
+          <button id="btnPushTest" class="btn subtle" type="button">Test</button><span id="pushStatus" class="muted small"></span></div>
+      </section>
+
+      <section>
+        <h3>Devices</h3>
+        <p class="muted small">Printers, the robot car, cameras, microphones and speakers - found and checked
+          automatically. Run it again after plugging something in or switching it on.</p>
+        <div class="row"><button id="btnFindDevices" class="btn subtle" type="button">Find devices</button>
+          <span id="devStatus" class="muted small"></span></div>
+        <ul id="devList" class="cam-list"></ul>
+      </section>
+
+      <section>
+        <h3>3D printing</h3>
+        <label>Printer type
+          <select id="sPrinterKind"><option value="">None</option><option value="flashforge">Flashforge (LAN)</option>
+            <option value="moonraker">Klipper / Moonraker</option><option value="octoprint">OctoPrint</option></select>
+        </label>
+        <label>Address <input id="sPrinterHost" type="text" spellcheck="false" placeholder="found automatically"></label>
+        <label>Printer profile <input id="sPrinterModel" type="text" spellcheck="false" placeholder="Flashforge AD5X 0.4 nozzle"></label>
+        <label>Flashforge serial + check code <span class="muted small">(printer screen → Settings → About / Network)</span>
+          <div class="row"><input id="sPrinterSerial" type="password" autocomplete="off" placeholder="serial">
+            <input id="sPrinterCode" type="password" autocomplete="off" placeholder="check code">
+            <button id="btnPrinterSave" class="btn subtle" type="button">Save</button></div>
+        </label>
       </section>
 
       <section>

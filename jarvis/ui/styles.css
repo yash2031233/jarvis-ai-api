@@ -480,3 +480,36 @@ body[data-mode] #orb { mix-blend-mode: screen; background: transparent; }
 
 .bar i.routing { width: 35%; animation: routing 1.1s ease-in-out infinite alternate; }
 @keyframes routing { from { margin-left: 0; } to { margin-left: 65%; } }
+
+body:not(.remote) .phone-only { display: none; }
+
+/* ---------- hub (dashboard) */
+#hubView { display: none; }
+body[data-mode="hub"] #hubView { display: block; position: absolute; inset: 0; overflow: auto; padding: 50px 16px 90px;
+  background: rgba(5, 3, 2, .94); z-index: 3; }
+body[data-mode="hub"] #orb { inset: auto; right: 10px; bottom: 76px; left: auto; top: auto; width: 96px; height: 96px; z-index: 4; }
+body[data-mode="hub"] #reply { z-index: 5; }
+.hubHead { display: flex; align-items: baseline; gap: 12px; margin: 0 4px 12px; }
+.hubHead h2 { margin: 0; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; color: var(--muted); }
+.hubGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.hcard { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; min-height: 120px;
+  animation: tcIn .3s ease-out both; }
+.hk { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.hbig { font: 600 34px/1 var(--mono); color: var(--accent-hot); margin-bottom: 6px; text-shadow: 0 0 18px rgba(255, 178, 107, .3); }
+.hbig small { font-size: 13px; color: var(--muted); margin-left: 4px; font-weight: 500; }
+.hrow { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 3px 0; }
+.hrow span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrow b { font-weight: 500; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrow .ok { color: var(--ok); } .hrow .bad { color: var(--danger); } .hrow .dim, .dim { color: var(--muted); }
+.hbar { height: 4px; border-radius: 4px; background: rgba(255, 178, 107, .12); margin: 4px 0 8px; overflow: hidden; }
+.hbar i { display: block; height: 100%; background: linear-gradient(90deg, #d9853d, var(--accent)); transition: width .6s; }
+.hbar.hot i { background: linear-gradient(90deg, #ff7a5c, #ff4b3a); }
+.hslots { display: flex; gap: 6px; margin-top: 8px; }
+.hslots i { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .3); }
+.hbtn { margin-top: 8px; }
+/* ---------- hand control */
+#holo { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2000; }
+body.holoOn #btnHands { color: var(--accent); border-color: var(--line-strong); }
+.holoHover { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+body.remote #btnHands { display: none; }
+body[data-mode] #orb { -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 52%, transparent 71%); mask-image: radial-gradient(circle at 50% 50%, #000 52%, transparent 71%); }

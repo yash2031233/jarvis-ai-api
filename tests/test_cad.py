@@ -99,9 +99,71 @@ def test_print3d_tool_registered_with_v1_name():
     assert {"action", "name", "what", "change"} <= set(props)
 
 
-def test_print3d_printing_actions_explain_themselves():
+def test_printing_needs_setup_and_says_so():
+    from jarvis import config
     from jarvis.hands import load_builtin_tools, registry
 
     load_builtin_tools()
-    r = asyncio.run(registry.run("print3d", {"action": "slice"}))
-    assert not r.ok and "export" in r.hint
+    config.store.update(printer_kind="", printer_model="")
+    r = asyncio.run(registry.run("printer", {"action": "pause"}))
+    assert not r.ok and "No printer set up" in r.error
+
+
+def test_slicer_profiles_are_picked_from_the_printer_model(tmp_path, monkeypatch):
+    from jarvis import config
+    from jarvis.cad import printer
+
+    exe = tmp_path / "slicer" / "orca.exe"
+    exe.parent.mkdir()
+    exe.write_text("")
+    v = tmp_path / "slicer" / "resources" / "profiles" / "Flashforge"
+    for sub, names in {"machine": ["Flashforge AD5X 0.4 nozzle", "Flashforge AD5X 0.6 nozzle"],
+                       "process": ["0.20mm Standard @FF AD5X", "0.24mm Draft @FF AD5X", "0.16mm Standard @FF AD5X",
+                                   "0.30mm Standard @FF AD5X 0.6 nozzle"],
+                       "filament": ["Flashforge PLA Basic @FF AD5X", "Flashforge HS PLA @FF AD5X",
+                                    "Flashforge PLA Basic @FF AD5X 0.6 nozzle"]}.items():
+        (v / sub).mkdir(parents=True)
+        for n in names:
+            (v / sub / f"{n}.json").write_text("{}")
+    config.store.update(slicer_path=str(exe), printer_model="Flashforge AD5X 0.4 nozzle", printer_filament="PLA Basic")
+    try:
+        assert printer.profiles("draft")["process"].stem == "0.24mm Draft @FF AD5X"
+        assert printer.profiles("fine")["process"].stem == "0.16mm Standard @FF AD5X"
+        assert printer.profiles("standard")["filament"].stem == "Flashforge PLA Basic @FF AD5X"
+        config.store.update(printer_model="Flashforge AD5X 0.6 nozzle")
+        p = printer.profiles("standard")
+        assert p["process"].stem == "0.30mm Standard @FF AD5X 0.6 nozzle" and "0.6 nozzle" in p["filament"].stem
+    finally:
+        config.store.update(slicer_path="", printer_model="", printer_filament="PLA")
+
+
+def test_devices_must_identify_themselves():
+    import socket
+    import threading
+
+    from jarvis import devices
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+
+    def fake_flashforge():
+        c, _ = srv.accept()
+        with c:
+            for _ in range(3):
+                data = c.recv(1024)
+                if b"M115" in data:
+                    c.sendall(b"CMD M115 Received.\r\nMachine Type: Flashforge AD5X\r\nMachine Name: Shop\r\nok\r\n")
+                elif data:
+                    c.sendall(b"ok\r\n")
+    threading.Thread(target=fake_flashforge, daemon=True).start()
+    real = socket.create_connection
+    devices.socket.create_connection = lambda addr, timeout=None: real(("127.0.0.1", port), timeout=timeout)
+    try:
+        info = devices.flashforge_info("10.9.9.9")
+    finally:
+        devices.socket.create_connection = real
+        srv.close()
+    assert info["kind"] == "flashforge" and info["model"] == "Flashforge AD5X" and info["name"] == "Shop"
+    assert devices.octoprint_info("127.0.0.1", 1) is None and devices.car_info("127.0.0.1") is None

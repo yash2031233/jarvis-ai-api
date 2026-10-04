@@ -35,6 +35,11 @@ SETTABLE: dict[str, str] = {
     "learn": "learn lessons from experience",
     "cad_review": "visual self-check of 3D designs",
     "bed_mm": "3D printer build volume [x, y, z] in mm",
+    "printer_kind": "3D printer type: flashforge | moonraker | octoprint (empty = none)",
+    "printer_host": "3D printer address (empty = find it on the network)",
+    "printer_model": "slicer printer profile, e.g. 'Flashforge AD5X 0.4 nozzle'",
+    "printer_filament": "filament profile to slice with, e.g. 'PLA Basic'",
+    "slicer_path": "path to the OrcaSlicer-family slicer (empty = find it)",
     "auto_webcam": "use the first webcam without setting it up",
     "nav_voice": "speak turn-by-turn directions",
     "nav_units": "imperial | metric for directions",
@@ -185,16 +190,35 @@ def conversation_history(query: str = "", action: str = "search", limit: int = 1
                           "text": (m["content"] or "")[:400]} for m in rows]}
 
 
-PANELS = ("history", "settings", "map", "cameras", "study", "model", "jobs", "close")
+PANELS = ("history", "settings", "map", "cameras", "study", "model", "jobs", "hub", "hands_on", "hands_off", "close")
 
 
-@tool(risk="low", tags=["show", "open", "panel", "history", "settings", "map", "screen", "close"],
+@tool(risk="low", tags=["show", "open", "panel", "history", "settings", "map", "screen", "close", "dashboard", "hub",
+                        "hand control", "gestures", "holo"],
       examples=["show_panel(panel='history')", "show_panel(panel='map')", "show_panel(panel='close')"])
 def show_panel(panel: str) -> dict:
     """Open one of the app's screens: history (conversation + tool calls + background jobs), settings, map,
-    cameras (live view), study, model (the 3D part), jobs; close = back to the orb."""
+    cameras (live view), study, model (the 3D part), jobs, hub (the dashboard: computer, network, printer, car,
+    weather...); hands_on / hands_off = hand control (wave and pinch at the webcam to use the app); close = back
+    to the orb."""
     p = panel.strip().lower()
     if p not in PANELS:
         raise ToolError(f"Unknown panel '{panel}'.", hint="one of: " + ", ".join(PANELS))
     bus.emit("ui_open", panel=p)
     return {"opened": p}
+
+
+@tool(risk="low", timeout=60, tags=["find devices", "scan", "printer", "robot car", "camera", "detect", "network devices"],
+      examples=["find_devices()"])
+async def find_devices(setup: bool = True) -> dict:
+    """Find the devices Jarvis can use on this computer and network - 3D printers, the robot car, webcams, IP
+    cameras, microphones and speakers - each one checked to really be that device. With setup=true, anything not
+    set up yet (or that moved to a new address) is set up."""
+    import asyncio
+
+    from .. import devices
+
+    found = await asyncio.to_thread(devices.scan)
+    if setup:
+        found["set_up"] = devices.apply(found) or "nothing new to set up"
+    return found

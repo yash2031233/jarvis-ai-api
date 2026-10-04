@@ -188,8 +188,21 @@ export function createPhone({ api, token, orb, toast, onText }) {
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
+  // ---- notifications on this phone (asked from a tap: Settings → Phone notifications)
+  async function enablePush() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      throw new Error(/iPhone|iPad/.test(navigator.userAgent) ? "On iPhone: add Jarvis to the Home Screen first and open it from there (iOS 16.4+)." : "This browser can't do notifications.");
+    }
+    if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications weren't allowed.");
+    const reg = await navigator.serviceWorker.ready;
+    const { key } = await api("/api/push");
+    const raw = Uint8Array.from(atob(key.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((key.length + 3) % 4)), (c) => c.charCodeAt(0));
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw });
+    return api("/api/push/subscribe", { method: "POST", body: sub.toJSON() });
+  }
+
   return {
-    listen, say, stop, feed, finish, gpsOn,
+    listen, say, stop, feed, finish, gpsOn, enablePush,
     typed() { speakReplies = false; stop(); },             // typed questions get a typed answer (no surprise audio)
     get speaking() { return busy; },
   };

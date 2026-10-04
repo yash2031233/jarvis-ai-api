@@ -24,6 +24,7 @@ dependencies = [
   "pyperclip>=1.8",
   "rapidfuzz>=3",
   "numpy>=1.26",
+  "pywebpush>=2",
 ]
 
 [project.optional-dependencies]

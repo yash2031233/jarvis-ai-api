@@ -11,7 +11,6 @@ import json
 import math
 import re
 import time
-from pathlib import Path
 
 from .. import config
 from .registry import ToolError, tool

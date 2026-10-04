@@ -83,6 +83,17 @@ class Settings(BaseModel):
     # CAD (OpenSCAD)
     openscad_path: str = ""          # empty = auto-detect
     bed_mm: list[int] = Field(default_factory=lambda: [220, 220, 220])  # printer build volume (x, y, z)
+    # 3D printing (the Flashforge serial/check code or an OctoPrint/Moonraker API key live in the keychain)
+    printer_kind: str = ""           # "" (none) | flashforge | moonraker | octoprint
+    printer_host: str = ""           # address; empty = find it on the network (Flashforge / Moonraker)
+    printer_model: str = ""          # the slicer's printer profile name, e.g. "Flashforge AD5X 0.4 nozzle"
+    printer_filament: str = "PLA"    # filament profile to use (matched by name, e.g. "PLA Basic")
+    slicer_path: str = ""            # OrcaSlicer-family slicer; empty = find it
+    # Robot car (jarvis-car firmware; its token lives in the keychain as robot_token)
+    robot_host: str = ""             # empty = find it (its broadcast / the network)
+    robot_pan_left_high: bool = True # head servo direction: a bigger angle turns the head left
+    robot_tilt_ok: bool = True       # False if the head's up/down servo is broken
+    robot_turn_deg_per_s: float = 200.0
     cad_review: bool = True          # vision self-check of each design (needs a vision-capable model)
 
     # Cameras: [{"id", "name", "kind": "device"|"ip", "device": int, "url_display": str}]

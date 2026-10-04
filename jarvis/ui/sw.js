@@ -16,3 +16,19 @@ self.addEventListener("fetch", (e) => {
   // Tailscale answers 502 with an empty page when Jarvis isn't running on the PC: show the message instead
   e.respondWith(fetch(e.request).then((r) => (r.status >= 500 ? offline() : r)).catch(offline));
 });
+
+// Phone notifications (Web Push): reminders, finished jobs, Jarvis speaking up - even when the app is closed.
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Jarvis", {
+    body: d.body || "", tag: d.tag || "jarvis", icon: "/icon-192.png", badge: "/icon-192.png", data: { url: d.url || "/" },
+  }));
+});
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((cs) => {
+    const c = cs.find((x) => "focus" in x);
+    return c ? c.focus() : self.clients.openWindow((e.notification.data && e.notification.data.url) || "/");
+  }));
+});

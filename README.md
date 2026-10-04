@@ -27,12 +27,16 @@ in Settings and pick a model. No subscription, no lock-in.
 - 🎙️ **Local voice**: say "Jarvis" (or "Jarvis, open Spotify" in one go), Whisper speech-to-text, Kokoro or Pocket TTS, interrupt any time
 - 🔮 **The orb**: a real-time 3D (WebGL2) amber "molecular circuit" sphere that listens, thinks and speaks with you. Drag it to spin it
 - 🧭 **Maps & navigation**: "take me to the airport" → the fastest real route with a live ETA, then Google-Maps-style turn-by-turn that Jarvis **speaks before every turn**, reroutes when you miss one, and finds faster routes on the way. Nearby places, saved places, location reminders. Your phone is the GPS (through your own Telegram bot)
-- 🧊 **3D CAD**: "design a phone stand" → OpenSCAD model built, mesh-checked and visually self-reviewed, shown in a 3D viewer you can spin; tweak it by voice, STL export
+- 🧊 **3D CAD → printer**: "design a phone stand" → OpenSCAD model built, mesh-checked and visually self-reviewed, shown in a 3D viewer you can spin; tweak it by voice, slice it (OrcaSlicer-family) and print it on your Flashforge, Klipper or OctoPrint printer
+- 🔌 **Finds your devices**: printers, the robot car, webcams, IP cameras, mics and speakers are found and *verified* automatically - no IP addresses to type
+- 🚗 **Robot car**: drive a small camera car (jarvis-car firmware) by voice - look around, go somewhere, explore on its own
+- 📊 **Dashboard**: computer, GPU, network, printer, car, weather, jobs and timers on one screen
+- ✋ **Hand control**: pinch and wave at your webcam to grab the orb, turn the 3D part, tap buttons and stop Jarvis
 - 👁️ **Eyes**: reads and clicks anything on screen (local OCR), looks through your webcam or any IP camera, records the screen
 - 🧠 **Memory that grows**: an Obsidian-compatible notes vault Jarvis files facts into by itself, a nightly diary, search your files by meaning, and lessons learned from its own mistakes
 - 🕰️ **Proactive**: morning briefing, rain/test/battery heads-ups, quiet hours, long tasks run in the background
 - 🔁 **Habits**: repeated tool sequences get compiled into real, sandboxed, tested tools
-- 📱 **Phone app**: add it to your home screen over Tailscale - talk to Jarvis, hear him, and navigate with your phone's GPS, anywhere
+- 📱 **Phone app**: add it to your home screen over Tailscale - talk to Jarvis, hear him, navigate with your phone's GPS, and get notifications even when it's closed
 - 🧾 **See what it did**: every reply shows the tools it called (live), with timings - in the conversation and the History panel
 - 🔒 **Safe by default**: risky actions ask first, file changes are undoable, API keys live in your OS keychain
 - 🧩 **Extensible**: drop a Python file in `plugins/` to add a tool, or save multi-step tasks as skills
@@ -177,6 +181,21 @@ Jarvis keeps an Obsidian-compatible Markdown vault (or point it at yours in **Se
 spell it files lasting facts from your conversations into notes by itself, writes a short diary each night, and
 reflects on what went wrong to keep a list of principles it follows. **Settings → Memory** can turn each part off.
 
+## 3D printing
+
+Jarvis designs the part, then *"slice it"* (print time and grams) and *"print it in red"*. Settings → 3D printing:
+pick the printer type - **Flashforge** (AD5X, Adventurer 5M…: add the serial number and check code from the printer's
+screen), **Klipper / Moonraker** or **OctoPrint** - and the slicer's printer profile name (e.g. `Flashforge AD5X 0.4
+nozzle`). The printer itself is found on your network automatically. Slicing uses OrcaSlicer or your printer maker's
+Orca-based slicer (found automatically). Starting, pausing or cancelling a print always asks you first.
+
+## Devices
+
+**Settings → Devices → Find devices** (or *"find my devices"*) sweeps your network and this computer: 3D printers,
+the robot car, webcams, IP cameras (ONVIF), microphones and speakers. Every device has to identify itself (a printer
+reports its model, the car answers as jarvis-car…) - an open port is never taken as proof. Jarvis also does this by
+itself at start, and finds a printer or car again when it gets a new address.
+
 ## Phone app
 
 Jarvis runs on your computer; your phone can use it as an app - its own mic, speaker and GPS - from anywhere,
@@ -189,6 +208,9 @@ privately, with [Tailscale](https://tailscale.com) (free):
    ```
    It prints your address, like `https://my-pc.tailXXXX.ts.net:8443` - reachable only by your own devices.
 3. Open that address on the phone. iPhone: Share → **Add to Home Screen**. Android: ⋮ → **Install app**.
+
+To get notifications on the phone (reminders, finished jobs, location alerts - even with the app closed), open
+**Settings → Phone notifications** in the phone app and turn them on (iPhone: iOS 16.4+, opened from the Home Screen).
 
 In the app, tap the mic and talk (it stops when you stop) - Jarvis's Whisper on the computer listens and his
 voice answers from the phone; typed questions get typed answers. While the app is open, the phone's GPS keeps

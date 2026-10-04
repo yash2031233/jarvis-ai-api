@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import time
 from typing import Any
@@ -184,6 +185,8 @@ async def _loop() -> None:
 def start() -> None:
     """(Re)start the poller - call after the token changes. Needs the server's event loop."""
     global _task
+    if os.environ.get("JARVIS_NO_TELEGRAM"):     # a second copy (testing) must not take the bot's messages
+        return
     if _task and not _task.done():
         _task.cancel()
     state.update(bot=None, error=None, running=False)

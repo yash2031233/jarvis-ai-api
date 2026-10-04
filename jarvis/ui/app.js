@@ -2,6 +2,8 @@
 import { Orb } from "/ui/orb3d.js";
 import { createMap } from "/ui/map.js";
 import { createPhone, REMOTE } from "/ui/phone.js";
+import { createHub } from "/ui/hub.js";
+import { createHolo } from "/ui/holo.js";
 
 const TOKEN = document.querySelector('meta[name="jarvis-token"]').content;
 const $ = (id) => document.getElementById(id);
@@ -410,7 +412,8 @@ function fillSettings(data) {
   $("sShell").checked = s.shell_enabled;
   $("sName").value = s.user_name;
   $("sProactive").checked = s.proactive;
-  $("sNavVoice").checked = s.nav_voice; $("sNavUnits").value = s.nav_units || "imperial";
+  $("sNavVoice").checked = s.nav_voice;
+  loadDevicesPanel(); $("sNavUnits").value = s.nav_units || "imperial";
   loadLocation();
   $("sHeartbeat").value = String(s.heartbeat_min || 0);
   $("sQuietStart").value = s.quiet_start; $("sQuietEnd").value = s.quiet_end;
@@ -623,6 +626,7 @@ const model = (() => {
     if (!loading) {
       loading = import("/ui/model.js").then(({ ModelView }) => {
         view = new ModelView(host, { token: TOKEN, bed });
+        window.JarvisModelView = view;           // hand control turns / zooms it
         return view;
       });
     }
@@ -927,6 +931,50 @@ $("btnGmSave").addEventListener("click", async () => {
   $("gmKey").value = ""; if (key) toast("Google Maps key saved ✓");
   loadLocation();
 });
+// ------------------------------------------------------------------ Settings → phone notifications / devices / printing
+async function loadDevicesPanel() {
+  const s = settings || {};
+  $("sPrinterKind").value = s.printer_kind || ""; $("sPrinterHost").value = s.printer_host || "";
+  $("sPrinterModel").value = s.printer_model || "";
+  try {
+    const k = await api("/api/secrets");
+    $("sPrinterSerial").placeholder = k.printer_serial ? "serial (saved)" : "serial";
+    $("sPrinterCode").placeholder = k.printer_code ? "check code (saved)" : "check code";
+    if (phone) { const p = await api("/api/push"); $("pushStatus").textContent = p.phones ? `${p.phones} phone(s) get notifications` : ""; }
+  } catch { /* optional */ }
+}
+$("sPrinterKind").addEventListener("change", () => save({ printer_kind: $("sPrinterKind").value }));
+$("sPrinterHost").addEventListener("change", () => save({ printer_host: $("sPrinterHost").value.trim() }));
+$("sPrinterModel").addEventListener("change", () => save({ printer_model: $("sPrinterModel").value.trim() }));
+$("btnPrinterSave").addEventListener("click", async () => {
+  await api("/api/secrets", { method: "POST", body: { printer_serial: $("sPrinterSerial").value, printer_code: $("sPrinterCode").value } });
+  $("sPrinterSerial").value = ""; $("sPrinterCode").value = ""; toast("Printer keys saved ✓"); loadDevicesPanel();
+});
+$("btnFindDevices").addEventListener("click", async () => {
+  $("devStatus").textContent = "Looking…"; $("devList").replaceChildren();
+  try {
+    const f = await api("/api/devices/scan");
+    const row = (icon, text, sub) => { const li = document.createElement("li"); li.innerHTML = `<b></b> <span></span> <small class="muted"></small>`;
+      li.querySelector("b").textContent = icon; li.querySelector("span").textContent = text; li.querySelector("small").textContent = sub || ""; return li; };
+    const rows = [
+      ...f.printers.map((p) => row("🖨", p.model, `${p.kind} · ${p.host}`)),
+      ...f.cars.map((c) => row("🚗", "Robot car", c.host)),
+      ...(f.webcams || []).map((w) => row("📷", w.name, "webcam")),
+      ...f.ip_cameras.map((c) => row("📹", c.model, `${c.host} · add it in Cameras with its RTSP address`)),
+      ...(f.microphones || []).map((m) => row("🎙", m, "microphone")),
+      ...(f.speakers || []).map((m) => row("🔊", m, "speaker")),
+    ];
+    $("devList").replaceChildren(...rows);
+    $("devStatus").textContent = `${f.seconds}s` + (f.set_up && f.set_up.length ? ` · set up: ${f.set_up.join("; ")}` : "")
+      + (f.printers.length || f.cars.length ? "" : " · no printer or car answered (switched off?)");
+    const d = await api("/api/settings"); settings = d.settings; loadDevicesPanel();
+  } catch (e) { $("devStatus").textContent = `Failed: ${e.message}`; }
+});
+$("btnPush").addEventListener("click", async () => {
+  try { const r = await phone.enablePush(); $("pushStatus").textContent = `On ✓ (${r.phones} phone(s))`; }
+  catch (e) { $("pushStatus").textContent = e.message; }
+});
+$("btnPushTest").addEventListener("click", () => api("/api/push/test", { method: "POST" }).then((r) => toast(r.sent ? "Sent ✓" : "No phone has notifications on yet.")));
 $("sNavVoice").addEventListener("change", () => save({ nav_voice: $("sNavVoice").checked }));
 $("sNavUnits").addEventListener("change", () => save({ nav_units: $("sNavUnits").value }));
 
@@ -944,6 +992,22 @@ const mapview = createMap({
   onClose() { if (document.body.dataset.mode === "map") delete document.body.dataset.mode; },
 });
 $("btnMap").addEventListener("click", () => (mapview.isOpen ? mapview.close() : mapview.open()));
+
+// ------------------------------------------------------------------ dashboard + hand control (from v1)
+const hub = createHub({
+  api,
+  onOpen() {
+    if (document.body.dataset.mode === "model") model.exit();
+    if (document.body.dataset.mode === "camera") camview.close();
+    if (document.body.dataset.mode === "study") studyview.close();
+    if (document.body.dataset.mode === "map") mapview.close();
+  },
+  onClose() { if (document.body.dataset.mode === "hub") delete document.body.dataset.mode; },
+  openMap: () => mapview.open(),
+});
+$("btnHub").addEventListener("click", () => (hub.isOpen ? hub.close() : hub.open()));
+const holo = createHolo({ toast: (...a) => toast(...a), stop: () => { if (phone) phone.stop(); send({ type: "cancel" }); } });
+$("btnHands").addEventListener("click", () => holo.toggle());
 mapview.prewarm();
 
 // ------------------------------------------------------------------ the show_panel tool: Jarvis opens a screen
@@ -955,7 +1019,10 @@ function openPanel(p) {
     if (mode === "study") studyview.close();
     if (mode === "map") mapview.close();
   };
-  if (p === "close") { closeModes(); closeDrawer("history"); closeDrawer("settings"); return; }
+  if (p === "close") { closeModes(); hub.close(); closeDrawer("history"); closeDrawer("settings"); return; }
+  if (p === "hub" || p === "dashboard") { if (!hub.isOpen) hub.open(); return; }
+  if (p === "hands_on") { if (!holo.on) holo.start(); return; }
+  if (p === "hands_off") { if (holo.on) holo.stop(); return; }
   if (p === "history" || p === "jobs") { if ($("history").classList.contains("hidden")) $("btnHistory").click(); return; }
   if (p === "settings") { openSettings(); return; }
   if (p === "map") { if (!mapview.isOpen) mapview.open(); return; }

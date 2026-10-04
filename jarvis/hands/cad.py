@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
+
 from ..cad import designer, openscad
+from ..cad import printer as printing
 from .osutil import open_path
 from .registry import ToolError, tool
 
-PRINT_ACTIONS = {"slice", "send", "slots", "status", "pause", "resume", "cancel"}
 
 
 @tool(
@@ -18,7 +21,9 @@ PRINT_ACTIONS = {"slice", "send", "slots", "status", "pause", "resume", "cancel"
         "saved as a new version; view = open a part in the 3D view; preview = render images (`angle`: iso, front, "
         "back, left, right, top, bottom, or several comma-separated); list = parts made so far; "
         "versions = a part's history; revert = bring back `version` of a part; "
-        "export = the part's STL/3MF/SCAD files and open its folder. "
+        "export = the part's STL/3MF/SCAD files and open its folder; slice = make it printable (`quality` draft | "
+        "standard | fine) and report print time / grams; status = the printer's state and progress; slots = "
+        "filament colours loaded. To actually print, pause, resume or cancel use the `printer` tool. "
         "Every design/tweak is compiled, auto-fixed if OpenSCAD errors, and checked (size vs the bed, watertight) - "
         "read `issues` in the result and tweak again if something is wrong."
     ),
@@ -28,7 +33,7 @@ PRINT_ACTIONS = {"slice", "send", "slots", "status", "pause", "resume", "cancel"
               "name='headphone hook')", "print3d(action='tweak', change='make it 10 mm wider')"],
 )
 async def print3d(action: str, name: str = "", what: str = "", change: str = "", angle: str = "iso",
-                  version: int = 0) -> dict:
+                  version: int = 0, quality: str = "standard") -> dict:
     a = action.lower().strip()
     try:
         if a == "design":
@@ -66,11 +71,24 @@ async def print3d(action: str, name: str = "", what: str = "", change: str = "",
             open_path(str(d))
             return {"part": part, "version": v, "folder": str(d),
                     "files": sorted(p.name for p in d.iterdir())}
-        if a in PRINT_ACTIONS:
-            raise ToolError("Printing isn't built in yet (design and view only for now).",
-                            hint="Use action=export to get the STL/3MF for the slicer.")
+        if a == "slice":
+            part = designer.resolve(name)
+            v = version or designer.versions_of(part)[-1]
+            d = designer.vdir(part, v)
+            three = d / "part.3mf"
+            if not three.exists():
+                raise ToolError("This version has no 3MF to slice.", hint="Tweak or re-design it first.")
+            out = await asyncio.to_thread(printing.slice_part, three, d / "gcode", quality)
+            return {"part": part, "version": v, **out,
+                    "next": "tell the user the time and weight; print with the printer tool (action=send) when they say go"}
+        if a == "status":
+            return await asyncio.to_thread(printing.status)
+        if a == "slots":
+            return {"slots": await asyncio.to_thread(printing.slots)}
         raise ToolError(f"Unknown action '{action}'.",
-                        hint="design, tweak, view, preview, list, versions, revert, export")
+                        hint="design, tweak, view, preview, list, versions, revert, export, slice, status, slots")
+    except printing.PrinterError as e:
+        raise ToolError(str(e))
     except openscad.OpenSCADMissing:
         raise ToolError("OpenSCAD isn't installed on this PC.",
                         hint="Install OpenSCAD (nightly recommended) from openscad.org, or set its path in settings.")
@@ -78,3 +96,34 @@ async def print3d(action: str, name: str = "", what: str = "", change: str = "",
         raise ToolError(str(e), hint="Use action=list to see the parts.")
     except RuntimeError as e:
         raise ToolError(str(e)[-900:], hint="Simplify the request or describe the shape differently, then retry.")
+
+
+@tool(risk="medium", timeout=400,
+      tags=["print", "start print", "printer", "pause print", "resume print", "cancel print", "3d printer"],
+      examples=["printer(action='send', color='red')", "printer(action='pause')"])
+async def printer(action: str, name: str = "", version: int = 0, color: str = "", start: bool = True) -> dict:
+    """The 3D printer itself (asks before acting). action: send = upload the sliced part (`name`, latest version;
+    slice it first with print3d) and start printing - `color` picks the filament slot ('red', '#F72224' or a slot
+    number) on printers with a material station; pause / resume / cancel the current print."""
+    a = action.lower().strip()
+    try:
+        if a in ("pause", "resume", "cancel"):
+            return await asyncio.to_thread(printing.control, a)
+        if a != "send":
+            raise ToolError("action must be send, pause, resume or cancel.")
+        part = designer.resolve(name)
+        v = version or designer.versions_of(part)[-1]
+        g = designer.vdir(part, v) / "gcode"
+        kind = printing._kind()
+        cands = (sorted(g.glob("*_sliced.3mf")) if kind == "flashforge" else []) + sorted(g.glob("*.gcode"))
+        if not cands:
+            raise ToolError("Not sliced yet.", hint="print3d(action='slice') first.")
+        slot = None
+        if color:
+            slot = (await asyncio.to_thread(printing.slot_for_color, color))["slot"]
+        out = await asyncio.to_thread(printing.send, Path(cands[0]), start, slot)
+        return {"part": part, "version": v, **out}
+    except printing.PrinterError as e:
+        raise ToolError(str(e))
+    except LookupError as e:
+        raise ToolError(str(e), hint="print3d(action='list') shows the parts.")
