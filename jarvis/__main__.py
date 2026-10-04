@@ -31,6 +31,31 @@ def _port_in_use(port: int) -> bool:
     return False
 
 
+def _replace_running() -> None:
+    """Starting Jarvis again (e.g. after an update) replaces the copy that's already running, so the new version
+    takes over the same port and the same window spot. Only ever stops a Jarvis that uses this data folder."""
+    pidf = config.DATA_DIR / "jarvis.pid"
+    try:
+        import psutil
+
+        old = int(pidf.read_text().strip())
+        if old != os.getpid() and psutil.pid_exists(old):
+            proc = psutil.Process(old)
+            if "jarvis" in " ".join(proc.cmdline()).lower():
+                proc.terminate()
+                try:
+                    proc.wait(8)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+    except Exception:
+        pass
+    try:
+        pidf.parent.mkdir(parents=True, exist_ok=True)
+        pidf.write_text(str(os.getpid()))
+    except OSError:
+        pass
+
+
 def _free_port(preferred: int) -> int:
     for port in range(preferred, preferred + 20):
         if not _port_in_use(port):
@@ -150,6 +175,7 @@ def main() -> None:
 
     from .server.app import app
 
+    _replace_running()
     port = _free_port(args.port)
     url = f"http://127.0.0.1:{port}/"
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))

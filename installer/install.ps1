@@ -1,6 +1,6 @@
 # Jarvis installer for Windows. Run by Jarvis.exe on first launch (or manually).
 # Installs Python if needed, creates .venv, installs Jarvis, adds shortcuts, starts it.
-param([switch]$Reinstall, [switch]$NoLaunch, [switch]$NoShortcuts)
+param([switch]$Reinstall, [switch]$Update, [switch]$NoLaunch, [switch]$NoShortcuts)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -21,7 +21,8 @@ function Fail($msg) {
 
 Write-Host ""
 Write-Host "      J . A . R . V . I . S ." -ForegroundColor DarkYellow
-Write-Host "      first-time setup - this takes a few minutes" -ForegroundColor DarkGray
+if ($Update) { Write-Host "      updating - installing what the new version needs" -ForegroundColor DarkGray }
+else { Write-Host "      first-time setup - this takes a few minutes" -ForegroundColor DarkGray }
 
 # ------------------------------------------------------------------ 1. Python
 Step 1 "Looking for Python 3.10 - 3.13"

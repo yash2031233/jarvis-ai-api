@@ -50,6 +50,8 @@ Then open the folder and **double-click `Jarvis.exe`**.
 - **First time:** a setup window installs everything (Python too, if you don't have it), adds **Jarvis** to your
   Desktop and Start Menu, and starts it. Takes a few minutes.
 - **After that:** `Jarvis.exe` (or the shortcut) just starts Jarvis.
+- **Updating:** `git pull`, then start Jarvis again. If the update needs new packages, `Jarvis.exe` installs them
+  first; a Jarvis that's already open is replaced by the new one. Your settings, keys and memory are kept.
 - NVIDIA GPUs are detected automatically and get GPU speech recognition.
 
 > `Jarvis.exe` is a tiny open-source launcher ([source](installer/Launcher.cs), rebuild with
