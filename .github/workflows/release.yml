@@ -1,0 +1,66 @@
+name: Release
+
+# Push a tag like v0.1.0 to build installers for Windows, macOS and Linux
+# and attach them to a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: Jarvis-windows-x64.zip
+          - os: macos-latest
+            artifact: Jarvis-macos-arm64.zip
+          - os: ubuntu-22.04
+            artifact: Jarvis-linux-x64.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Linux system packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 libgirepository1.0-dev libwebkit2gtk-4.1-dev
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[voice,desktop,docs,dev]"
+      - name: Build
+        run: pyinstaller packaging/jarvis.spec --noconfirm
+      - name: Package (Windows / macOS)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then 7z a ../${{ matrix.artifact }} Jarvis; else zip -qry ../${{ matrix.artifact }} Jarvis.app; fi
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf ${{ matrix.artifact }} -C dist Jarvis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

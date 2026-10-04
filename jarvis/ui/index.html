@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J.A.R.V.I.S.</title>
+<meta name="jarvis-token" content="__JARVIS_TOKEN__">
+<link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+<div id="app">
+  <!-- frameless window chrome -->
+  <header class="topbar pywebview-drag-region">
+    <span class="brand">J.A.R.V.I.S.</span>
+    <span id="status" class="status" aria-live="polite"></span>
+    <div class="win-controls">
+      <button id="btnHistory" class="icon-btn" title="History" aria-label="History">
+        <svg viewBox="0 0 24 24"><path d="M12 7v5l3 2M3 12a9 9 0 1 0 3-6.7M3 4v4h4"/></svg>
+      </button>
+      <button id="btnSettings" class="icon-btn" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      <button id="btnMin" class="icon-btn desktop-only" title="Minimize" aria-label="Minimize">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+      </button>
+      <button id="btnClose" class="icon-btn desktop-only" title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <canvas id="orb" aria-label="Jarvis orb"></canvas>
+    <div id="transcript" class="transcript" aria-live="polite"></div>
+    <div id="reply" class="reply" aria-live="polite"></div>
+    <ul id="activity" class="activity" aria-label="Tool activity"></ul>
+  </main>
+
+  <footer class="dock">
+    <form id="prompt" class="prompt" autocomplete="off">
+      <input id="input" type="text" placeholder="Ask Jarvis…" aria-label="Message Jarvis">
+      <button id="btnSend" type="submit" class="icon-btn" title="Send" aria-label="Send">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+      <button id="btnStop" type="button" class="icon-btn hidden" title="Stop (Esc)" aria-label="Stop">
+        <svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+      </button>
+    </form>
+    <button id="btnMic" class="mic" title="Talk (click or hold)" aria-label="Talk to Jarvis">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+  </footer>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <!-- confirmation -->
+  <div id="confirm" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="card">
+      <h2 id="confirmTitle">Allow this action?</h2>
+      <p id="confirmText"></p>
+      <pre id="confirmArgs"></pre>
+      <div class="row end">
+        <button id="confirmNo" class="btn">Deny</button>
+        <button id="confirmYes" class="btn primary">Allow</button>
+      </div>
+      <p class="hint">You can also say “yes” or “no”.</p>
+    </div>
+  </div>
+
+  <!-- history drawer -->
+  <aside id="history" class="drawer left hidden" aria-label="Conversation history">
+    <div class="drawer-head"><h2>History</h2><button class="icon-btn" data-close="history" aria-label="Close history"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div id="historyList" class="history-list"></div>
+    <div class="row"><button id="btnClearHistory" class="btn subtle">Clear history</button></div>
+  </aside>
+
+  <!-- settings -->
+  <aside id="settings" class="drawer right hidden" aria-label="Settings">
+    <div class="drawer-head"><h2>Settings</h2><button class="icon-btn" data-close="settings" aria-label="Close settings"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="settings-body">
+      <section id="onboarding" class="onboard hidden">
+        <h3>Welcome</h3>
+        <p>Jarvis needs a brain. Paste an API key below — a free NVIDIA key from
+          <a href="https://build.nvidia.com" target="_blank" rel="noopener">build.nvidia.com</a> works great —
+          or pick <b>Ollama</b> to run a model locally.</p>
+      </section>
+
+      <section>
+        <h3>Brain</h3>
+        <label>Provider
+          <select id="sProvider"></select>
+        </label>
+        <label>Base URL
+          <input id="sBaseUrl" type="url" spellcheck="false">
+        </label>
+        <label>API key <span id="keyState" class="muted"></span>
+          <div class="row">
+            <input id="sKey" type="password" placeholder="nvapi-…" spellcheck="false" autocomplete="off">
+            <button id="btnSaveKey" class="btn">Save</button>
+          </div>
+        </label>
+        <div class="row">
+          <button id="btnTestConn" class="btn subtle">Test connection</button>
+          <span id="connResult" class="muted"></span>
+        </div>
+        <label>Model
+          <div class="row">
+            <select id="sModel"><option value="">— load models —</option></select>
+            <button id="btnLoadModels" class="btn subtle" title="Refresh model list">↻</button>
+          </div>
+        </label>
+        <input id="sModelFilter" type="search" placeholder="Filter models…" aria-label="Filter models">
+        <div class="row">
+          <button id="btnTestModel" class="btn subtle">Test tool calling</button>
+          <span id="modelResult" class="muted"></span>
+        </div>
+        <label>Temperature <output id="tempOut"></output>
+          <input id="sTemp" type="range" min="0" max="1.2" step="0.05">
+        </label>
+      </section>
+
+      <section>
+        <h3>Voice</h3>
+        <label class="switch"><input id="sVoice" type="checkbox"> Voice enabled</label>
+        <label class="switch"><input id="sWake" type="checkbox"> “Hey Jarvis” wake word</label>
+        <label>Engine
+          <select id="sEngine">
+            <option value="auto">Auto (detect GPU)</option>
+            <option value="gpu">Local GPU</option>
+            <option value="cpu">Local CPU</option>
+          </select>
+        </label>
+        <p id="voiceInfo" class="muted small"></p>
+        <label>Voice
+          <div class="row"><select id="sTtsVoice"></select></div>
+        </label>
+        <label>Speed <output id="speedOut"></output>
+          <input id="sSpeed" type="range" min="0.7" max="1.4" step="0.05">
+        </label>
+        <label>Microphone
+          <select id="sMic"><option value="">Default</option></select>
+        </label>
+        <label>Push-to-talk hotkey
+          <input id="sHotkey" type="text" spellcheck="false">
+        </label>
+      </section>
+
+      <section>
+        <h3>Hands</h3>
+        <label class="switch"><input id="sFast" type="checkbox"> Instant commands (no AI call for simple requests)</label>
+        <label class="switch"><input id="sShell" type="checkbox"> Allow shell commands</label>
+        <details>
+          <summary>Tool permissions</summary>
+          <table class="perm"><tbody id="permTable"></tbody></table>
+        </details>
+        <details>
+          <summary>Recent file changes (undo)</summary>
+          <ul id="undoList" class="undo-list"></ul>
+          <button id="btnUndo" class="btn subtle">Undo last change</button>
+        </details>
+      </section>
+
+      <section>
+        <h3>Personal</h3>
+        <label>Your name
+          <input id="sName" type="text" placeholder="So Jarvis can address you">
+        </label>
+        <label>Personality
+          <textarea id="sPersonality" rows="4"></textarea>
+        </label>
+      </section>
+
+      <section class="muted small" id="about"></section>
+    </div>
+  </aside>
+</div>
+<script type="module" src="/ui/app.js"></script>
+</body>
+</html>

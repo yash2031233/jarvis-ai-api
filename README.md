@@ -2,78 +2,155 @@
 
 # J.A.R.V.I.S. — AI API Edition
 
-**An open-source, voice-first desktop AI assistant with fast agentic tools and a sci-fi UI.**
+**An open-source, voice-first desktop AI assistant with fast agentic tools and a living orb UI.**
 **Bring your own brain:** NVIDIA (build.nvidia.com), Ollama, or any OpenAI-compatible API.
 
-![Status](https://img.shields.io/badge/status-in%20development-orange)
+![Status](https://img.shields.io/badge/status-alpha-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
-![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+
+<img src="docs/reference/orb-reference.webp" width="360" alt="The Jarvis orb">
 
 </div>
 
 ---
 
-> 🚧 **Early development.** The design is done — see the full [plan & roadmap](docs/PLAN.md). Code is coming next.
-
 ## What is it?
 
-Jarvis is the **hands, ears, voice and face** of an AI assistant. You plug in the **brain** — paste an API key
-in the settings screen and pick a model. No subscription, no lock-in.
+Jarvis is the **hands, ears, voice and face** of an AI assistant. You plug in the **brain**: paste an API key
+in Settings and pick a model. No subscription, no lock-in.
 
-- 🧠 **Bring your own model** — NVIDIA build.nvidia.com by default (free API key), plus Ollama (fully local) or any OpenAI-compatible endpoint
-- 🖐️ **Fast agentic tools** — controls apps, files, browser, media and system; plans, acts and verifies its work
-- 🎙️ **Local voice** — "Hey Jarvis" wake word, Whisper speech-to-text, Kokoro/Piper text-to-speech, interrupt any time
-- ⚡ **Built for speed** — common commands run instantly without an LLM call; tools run in parallel
-- 🖥️ **The orb** — a living amber circuit-trace orb is the whole UI: orb, prompt box, mic, settings ([spec](docs/UI_ORB.md))
-- 🔒 **Safe by default** — risky actions need confirmation, file changes are undoable, API keys live in your OS keychain
-- 🧩 **Extensible** — drop a Python file in `plugins/` to add a new tool or skill
+- 🧠 **Bring your own model**: NVIDIA build.nvidia.com by default (free key), Ollama for fully local, or any OpenAI-compatible endpoint
+- 🖐️ **42 built-in tools**: apps, files, web, browser automation, media, volume, timers, clipboard, shell, Python, weather, notes, skills
+- ⚡ **Instant commands**: "open Spotify", "volume 40", "timer 5 minutes" run in milliseconds with **no LLM call**
+- 🎙️ **Local voice**: "Hey Jarvis" wake word, Whisper speech-to-text, Kokoro text-to-speech, interrupt any time
+- 🔮 **The orb**: a procedural amber "molecular circuit" sphere that listens, thinks and speaks with you
+- 🔒 **Safe by default**: risky actions ask first, file changes are undoable, API keys live in your OS keychain
+- 🧩 **Extensible**: drop a Python file in `plugins/` to add a tool, or save multi-step tasks as skills
 
-## Why another assistant?
+## Quick start
 
-The **agentic engine is the flagship.** Goals:
+```bash
+git clone https://github.com/yash2031233/jarvis-ai-api
+cd jarvis-ai-api
+python -m venv .venv
+# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
+pip install -e ".[all]"
+jarvis
+```
 
-| | Target |
+1. Get a free API key at **[build.nvidia.com](https://build.nvidia.com)** (or install [Ollama](https://ollama.com) for local models)
+2. Jarvis opens on the Settings screen: paste the key → **Save** → a model is picked for you
+3. Say **"Hey Jarvis"**, click the orb, or type
+
+On first launch the voice models download once (~400 MB on CPU, ~2 GB with the GPU Whisper model).
+
+**NVIDIA GPU?** Add `pip install -e ".[gpu]"` for GPU speech recognition (Whisper large-v3-turbo, ~130 ms per sentence).
+Blackwell cards (RTX 50-series / RTX PRO 6000) need a driver with CUDA 12.8+.
+
+Other launch options: `jarvis --browser` (UI in your browser), `jarvis --headless` (server only),
+`jarvis --no-voice`, `jarvis -v` (debug logs).
+
+## How it works
+
+```
+ "Hey Jarvis" ─► Whisper (local) ─► Fast-path router ──────────────► instant action (no LLM)
+                                        │ (anything more complex)
+                                        ▼
+                         Your model (NVIDIA / Ollama / any API)
+                                        │  only the relevant tools are sent
+                                        ▼
+               tool calls stream → safe tools start immediately → independent calls run in parallel
+                                        │
+                     results + verification ──► model self-corrects on errors
+                                        │
+                  Kokoro (local) speaks sentence-by-sentence while the reply streams
+```
+
+What makes the hands fast and reliable:
+
+| | |
 |---|---|
-| Simple commands ("open Spotify", "volume 40") | **< 150 ms**, no LLM call |
-| Voice: end of speech → first spoken word | **< 1.5 s** |
-| Multi-step tasks | Plan → act → **verify** → self-correct |
-| Weak or cheap models | Tool-call repair + ReAct fallback so they still work as agents |
+| **Fast path** | Common commands are matched locally and executed in ~1 ms, no API call |
+| **Dynamic tool loading** | Only ~15 relevant tools are sent per request → smaller prompt, faster first token |
+| **Streaming execution** | Read-only tools start while the model is still writing its turn |
+| **Parallel tools** | Independent calls run concurrently |
+| **Verify + self-correct** | Tools return structured errors with hints; actions are verified (e.g. the file exists) |
+| **Tool-call repair** | Fixes malformed JSON and fuzzy tool names; text-based fallback for models without function calling |
+| **Warm indexes** | Installed apps and your files are indexed in the background for instant lookup |
+| **Undo journal** | Every file write/move/delete can be undone ("Jarvis, undo that") |
+| **Injection guard** | Web pages, files and command output are marked untrusted; instructions inside them are ignored |
 
-Every claim will be backed by a public benchmark suite (`bench/`).
+Measured on the dev machine (RTX A6000): fast-path commands **~1 ms**, Whisper transcription **~130 ms** (GPU),
+first spoken audio **~275 ms** after a sentence is ready.
 
-## How it will work
+## Tools
 
+| Category | Tools | Default permission |
+|---|---|---|
+| Apps | open, close, focus, list installed/running | auto (close: ask) |
+| Files | search (instant index), read (txt/pdf/docx), list, open, write, move, create folder, delete, undo | read: auto · change: ask |
+| Web | search, open URL, read page | auto |
+| Browser agent | open, click, fill, read (Playwright) | auto (click/fill: ask) |
+| System | info (battery/CPU/RAM/disk/GPU), dark mode, lock/sleep/restart/shutdown | power: ask |
+| Media | play/pause/next/previous, volume/mute | auto |
+| Productivity | timers, reminders/alarms, notes/todos/facts, clipboard, calculator, weather | auto |
+| Power user | shell commands, Python runner | ask (shell can be disabled) |
+| Skills | save last task as skill, create skill, list skills | auto |
+
+Every tool's permission (auto / ask / off) is configurable in **Settings → Hands**.
+
+## Skills
+
+Do something multi-step, then say *"save that as work setup"*. Next time just say *"work setup"*.
+Skills are JSON files in your data folder; see [`plugins/skills/focus-mode.json`](plugins/skills/focus-mode.json).
+
+## Plugins
+
+```python
+# plugins/my_tool.py
+from jarvis.hands import tool, ToolError
+
+@tool(risk="low", tags=["dice", "roll"])
+def roll_dice(sides: int = 6, count: int = 1) -> dict:
+    """Roll one or more dice."""
+    ...
 ```
- "Hey Jarvis"  ─►  Whisper (local)  ─►  Fast-path router ──► instant action
-                                            │
-                                            ▼
-                             Your model (NVIDIA / Ollama / any API)
-                                            │
-                              Plan → parallel tools → verify
-                                            │
-                     Kokoro / Piper (local)  ◄──  streamed reply
+
+The function signature becomes the schema the model sees. See [`plugins/example_dice.py`](plugins/example_dice.py).
+
+## Benchmark
+
+```bash
+python -m bench.run --model meta/llama-3.3-70b-instruct
 ```
 
-## Planned quick start
+37 real desktop tasks in three tiers (instant / single-tool / multi-step) measuring success rate, latency and tool
+calls. Side-effecting tools are stubbed so it's safe to run. Results are saved to `bench/results/`.
 
-1. Download the installer for your OS from **Releases**
-2. Get a free API key at [build.nvidia.com](https://build.nvidia.com) (or point it at Ollama)
-3. Paste the key in the setup wizard → pick a model → *"Good evening. Jarvis online."*
+## Privacy & security
 
-## Hardware
+- The API key is stored in your OS keychain (Windows Credential Manager / macOS Keychain / Secret Service), never in plain text
+- Voice is processed **locally**: audio never leaves your machine; only the transcribed text goes to your model provider
+- The clipboard is only shared with the model when you refer to it ("summarize *this*")
+- The local server binds to `127.0.0.1` and requires a per-launch token
+- File deletes go to Jarvis's own trash and can be undone
 
-- **CPU only:** works — uses lighter voice models
-- **NVIDIA GPU:** auto-detected for fastest voice (Blackwell / RTX 50-series need CUDA 12.8+)
-- **Apple Silicon / AMD:** on the roadmap
+## Development
 
-## Roadmap
+```bash
+pip install -e ".[all,dev]"
+pytest -q                      # 64 tests, no network needed
+jarvis --browser -v
+```
 
-See **[docs/PLAN.md](docs/PLAN.md)** for the full feature list, v1 scope and roadmap.
+The orb fidelity tool (dev only, not part of the app UI) is at `http://127.0.0.1:<port>/compare`:
+side-by-side vs. the reference image, overlay slider, difference view, similarity scores and a blind A/B test.
 
-## Contributing
-
-Ideas, issues and PRs are welcome once the first code lands. Plugins and skills are the easiest place to start.
+Project layout: `jarvis/brain` (model client + tool-call repair) · `jarvis/router` (fast path) ·
+`jarvis/agent` (engine, skills, context) · `jarvis/hands` (tools) · `jarvis/voice` · `jarvis/safety` ·
+`jarvis/memory` · `jarvis/server` · `jarvis/ui`. Full plan: [docs/PLAN.md](docs/PLAN.md) · orb spec: [docs/UI_ORB.md](docs/UI_ORB.md).
 
 ## License
 

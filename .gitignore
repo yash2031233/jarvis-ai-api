@@ -33,3 +33,7 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# Dev tooling
+.claude/
+bench/results/

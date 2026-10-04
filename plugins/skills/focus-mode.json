@@ -1,0 +1,11 @@
+{
+  "name": "focus mode",
+  "description": "Example skill: silence distractions and start a 25-minute focus timer.",
+  "triggers": ["focus time", "deep work"],
+  "steps": [
+    {"tool": "media_control", "args": {"action": "play_pause"}},
+    {"tool": "set_volume", "args": {"level": 20}},
+    {"tool": "set_timer", "args": {"seconds": 1500, "label": "focus session"}}
+  ],
+  "version": 1
+}
