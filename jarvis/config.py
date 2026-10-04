@@ -34,6 +34,12 @@ PROVIDER_PRESETS: dict[str, dict[str, str]] = {
         "key_hint": "nvapi-...",
         "key_url": "https://build.nvidia.com",
     },
+    "lmstudio": {
+        "label": "LM Studio (local)",
+        "base_url": "http://localhost:1234/v1",
+        "key_hint": "not needed",
+        "key_url": "https://lmstudio.ai",
+    },
     "ollama": {
         "label": "Ollama (local)",
         "base_url": "http://localhost:11434/v1",
@@ -71,6 +77,41 @@ class Settings(BaseModel):
     wake_word: bool = True
     mic_device: int | None = None
     hotkey: str = "ctrl+space"
+
+    # CAD (OpenSCAD)
+    openscad_path: str = ""          # empty = auto-detect
+    bed_mm: list[int] = Field(default_factory=lambda: [220, 220, 220])  # printer build volume (x, y, z)
+    cad_review: bool = True          # vision self-check of each design (needs a vision-capable model)
+
+    # Cameras: [{"id", "name", "kind": "device"|"ip", "device": int, "url_display": str}]
+    # (an IP camera's full URL - often with a password in it - lives in the OS keychain)
+    cameras: list[dict] = Field(default_factory=list)
+    default_camera: str = ""
+    auto_webcam: bool = True         # offer the first webcam without setting it up
+
+    # Memory
+    vault_path: str = ""             # empty = <data>/vault; or point at an existing Obsidian vault
+    memory_keeper: bool = True       # file lasting facts from conversations into the vault by itself
+    learn: bool = True               # learn lessons from experience (reflection -> principles in every prompt)
+
+    # Proactivity
+    proactive: bool = True           # rule checks (rain, tomorrow's tests, long gaming, battery) - no model calls
+    heartbeat_min: int = 0           # 0 = off; else every N minutes the model decides if anything is worth saying
+    proactive_gap_min: int = 20      # at most one unprompted message per this many minutes
+    quiet_start: str = "22:30"
+    quiet_end: str = "07:00"
+    home_city: str = ""              # for rain alerts (empty = your live location, else detect from IP)
+
+    # Location / navigation (the Telegram bot token and a Google Maps key live in the keychain)
+    telegram_chat_id: int | None = None   # the paired chat - the only one the bot listens to
+    nav_voice: bool = True           # speak turn-by-turn directions while navigating
+    nav_units: str = "imperial"      # imperial (miles/feet) | metric (km/m) for spoken directions
+    briefing_time: str = ""          # e.g. "07:30" - morning briefing while Jarvis is running (empty = off)
+    diary_time: str = "23:30"        # nightly diary into the vault (empty = off)
+
+    # Finding files by content
+    index_folders: list[str] = Field(default_factory=list)   # empty = Documents, Desktop, Downloads
+    embed_model: str = ""            # empty = auto-detect an embeddings model from the provider (else keywords only)
 
     # Hands
     tool_permissions: dict[str, Permission] = Field(default_factory=dict)
@@ -130,30 +171,87 @@ store = _Store()
 
 # ---------------------------------------------------------------- API key
 
+# Secrets live in the OS keychain (Windows Credential Manager / macOS Keychain / Secret Service). Some Linux setups
+# have no keychain running (no GNOME Keyring / KWallet); then they go in a file only this user can read.
+SECRETS_FILE = CONFIG_DIR / "secrets.json"
+
+
+def _file_secrets() -> dict[str, str]:
+    try:
+        return json.loads(SECRETS_FILE.read_text("utf-8"))
+    except Exception:
+        return {}
+
+
+def _write_file_secrets(d: dict[str, str]) -> None:
+    SECRETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SECRETS_FILE.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+    os.replace(tmp, SECRETS_FILE)
+
+
+def _secret_get(name: str) -> str:
+    try:
+        import keyring
+
+        v = keyring.get_password(KEYRING_SERVICE, name)
+        if v:
+            return v
+    except Exception as e:
+        log.debug("keychain unavailable: %s", e)
+    return _file_secrets().get(name, "")
+
+
+def _secret_set(name: str, value: str) -> None:
+    stored = False
+    try:
+        import keyring
+
+        if value:
+            keyring.set_password(KEYRING_SERVICE, name, value)
+            stored = True
+        else:
+            try:
+                keyring.delete_password(KEYRING_SERVICE, name)
+            except Exception:
+                pass
+    except Exception as e:
+        log.warning("OS keychain unavailable (%s); keeping %s in %s (only your user can read it)", e, name, SECRETS_FILE)
+    d = _file_secrets()
+    if value and not stored:
+        d[name] = value
+    else:
+        d.pop(name, None)
+    if d or SECRETS_FILE.exists():
+        _write_file_secrets(d)
+
+
 def get_api_key() -> str:
     env = os.environ.get("JARVIS_API_KEY", "").strip()
     if env:
         return env
-    try:
-        import keyring
-
-        return keyring.get_password(KEYRING_SERVICE, KEYRING_USER) or ""
-    except Exception as e:
-        log.warning("keychain unavailable: %s", e)
-        return ""
+    return _secret_get(KEYRING_USER)
 
 
 def set_api_key(key: str) -> None:
-    import keyring
+    _secret_set(KEYRING_USER, key.strip())
 
-    key = key.strip()
-    if key:
-        keyring.set_password(KEYRING_SERVICE, KEYRING_USER, key)
-    else:
-        try:
-            keyring.delete_password(KEYRING_SERVICE, KEYRING_USER)
-        except Exception:
-            pass
+
+def get_secret(name: str) -> str:
+    return _secret_get(name)
+
+
+def set_secret(name: str, value: str) -> None:
+    _secret_set(name, value)
+
+
+def mask_url(url: str) -> str:
+    """rtsp://user:pass@host/x -> rtsp://user:••••@host/x"""
+    import re
+
+    return re.sub(r"(://[^:/@]+):[^@/]+@", r"\1:••••@", url)
 
 
 def mask_key(key: str) -> str:

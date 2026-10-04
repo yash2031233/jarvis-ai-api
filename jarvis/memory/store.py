@@ -99,9 +99,23 @@ class Memory:
             self.conn().commit()
             return cur.rowcount > 0
 
+    def messages_since(self, last_id: int, limit: int = 200) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self.conn().execute(
+                "SELECT id, ts, role, content FROM messages WHERE id > ? ORDER BY id LIMIT ?", (last_id, limit)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def facts_for_prompt(self, limit: int = 25) -> str:
-        rows = self.notes("fact", None, limit)
-        return "\n".join(f"- {r['text']}" for r in rows)
+        from . import vault
+
+        try:
+            text = vault.for_prompt(limit)
+        except Exception:
+            text = ""
+        rows = self.notes("fact", None, limit)  # older installs kept facts in SQLite
+        extra = "\n".join(f"- {r['text']}" for r in rows)
+        return "\n".join(x for x in (text, extra) if x)
 
 
 memory = Memory()

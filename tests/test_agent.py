@@ -105,3 +105,23 @@ def test_sentence_splitter_skips_code():
     sp.feed("Here you go: ```print('hi. there')``` Done. ")
     sp.flush()
     assert all("print" not in s for s in out)
+
+
+def test_empty_turn_is_retried_with_a_nudge(agent, monkeypatch):
+    # Some providers now and then end a turn with no text and no tool call - that used to show an empty reply.
+    fake = FakeBrain([TurnResult(text="", finish_reason="stop"), TurnResult(text="Hello there.")])
+    reply = _run(agent, fake, "hello? are you there at all", monkeypatch)
+    assert reply == "Hello there."
+    assert "came back empty" in fake.seen[1][-1]["content"]
+
+
+def test_empty_turns_never_give_a_silent_reply(agent, monkeypatch):
+    fake = FakeBrain([TurnResult(tool_calls=[ToolCall("calculate", {"expression": "6*7"})])]
+                     + [TurnResult(text="") for _ in range(3)])
+    reply = _run(agent, fake, "work out six times seven quietly", monkeypatch)
+    assert reply and "calculate" in reply
+    from jarvis.memory.store import memory
+
+    last = memory.history(1)[0]
+    assert last["role"] == "assistant" and last["meta"]["tools"][0]["name"] == "calculate"
+    assert last["meta"]["tools"][0]["ok"] is True

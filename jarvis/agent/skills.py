@@ -101,3 +101,34 @@ def list_skills() -> list[dict]:
     """List saved skills."""
     return [{"name": s["name"], "description": s.get("description", ""), "steps": len(s.get("steps", [])),
              "triggers": s.get("triggers", [])} for s in all_skills()] or [{"info": "no skills saved yet"}]
+
+
+@tool(risk="low", tags=["background", "job", "research", "long task", "later", "while", "in the background"],
+      examples=["job(action='start', task='Research the best budget 3D printers of 2026 and summarize pros/cons')",
+                "job(action='list')"])
+async def job(action: str, task: str = "", id: str = "") -> dict:
+    """Background jobs for BIG tasks that take many steps or minutes (research across several pages, making lots
+    of files or flashcards, long comparisons, 'do X and send me the result'). start = hand off `task` - write it out
+    fully with everything needed, since it runs in its own conversation - then tell the user it's started and
+    they'll get a notification; list = jobs and their status; status = one job's result (`id`); cancel = stop one.
+    Don't use it for quick things you can just do now."""
+    from . import jobs
+
+    a = action.lower().strip()
+    try:
+        if a == "start":
+            if len(task.strip()) < 10:
+                raise ToolError("Describe the task fully in `task`.")
+            j = jobs.start(task)
+            return {"started": j["id"], "status": j["status"],
+                    "note": "It runs in the background and the user gets a notification with the result. Do NOT do "
+                            "the task yourself now - just tell the user in one sentence that it's started."}
+        if a == "list":
+            return {"jobs": jobs.all_jobs()[:15] or "none"}
+        if a in ("status", "result"):
+            return jobs.get(id)
+        if a == "cancel":
+            return jobs.cancel(id)
+        raise ToolError(f"Unknown action '{action}'.", hint="start, list, status, cancel")
+    except LookupError as e:
+        raise ToolError(str(e), hint="Use action=list to see job ids.")

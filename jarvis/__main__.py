@@ -70,7 +70,7 @@ def _hotkey(window, hotkey: str) -> None:
     """Global hotkey: show the window and start listening."""
     try:
         from pynput import keyboard
-    except ImportError:
+    except Exception:  # not installed, or no X display (Wayland / headless Linux)
         return
     combo = "+".join(f"<{p}>" if len(p) > 1 else p for p in hotkey.lower().split("+"))
 
@@ -92,7 +92,7 @@ def _tray(window, url: str) -> None:
     try:
         import pystray
         from PIL import Image, ImageDraw
-    except ImportError:
+    except Exception:
         return
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -161,25 +161,36 @@ def main() -> None:
         server.run()
         return
 
-    threading.Thread(target=server.run, daemon=True).start()
+    srv = threading.Thread(target=server.run, daemon=True)
+    srv.start()
     _wait_up(port)
     try:
         import webview
-    except ImportError:
-        webbrowser.open(url)
-        server.should_exit = True
-        return
 
-    win_api = WindowApi()
-    window = webview.create_window(
-        "J.A.R.V.I.S.", url, width=1100, height=820, min_size=(520, 600),
-        background_color="#050302", frameless=True, easy_drag=False, js_api=win_api,
-    )
-    win_api._window = window
-    s = config.store.load()
-    _tray(window, url)
-    _hotkey(window, s.hotkey)
-    webview.start(debug=args.verbose)
+        win_api = WindowApi()
+        window = webview.create_window(
+            "J.A.R.V.I.S.", url, width=1100, height=820, min_size=(520, 600),
+            background_color="#050302", frameless=True, easy_drag=False, js_api=win_api,
+        )
+        win_api._window = window
+        s = config.store.load()
+        try:
+            _tray(window, url)
+        except Exception as e:
+            logging.getLogger(__name__).warning("tray icon unavailable: %s", e)
+        _hotkey(window, s.hotkey)
+        webview.start(debug=args.verbose)
+    except Exception as e:
+        # No desktop window on this system (e.g. Linux without the GTK/Qt bindings pywebview needs):
+        # use the browser instead, and keep the server running until Ctrl+C.
+        logging.getLogger(__name__).warning("desktop window unavailable (%s); opening Jarvis in your browser", e)
+        print(f"Jarvis running at {url}  (Ctrl+C to quit)")
+        webbrowser.open(url)
+        try:
+            while srv.is_alive():
+                srv.join(1)
+        except KeyboardInterrupt:
+            pass
     server.should_exit = True
 
 

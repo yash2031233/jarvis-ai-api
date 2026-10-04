@@ -260,3 +260,23 @@ def undo_last_action(count: int = 1) -> str:
     if not done:
         raise ToolError("Nothing to undo.")
     return "Undid: " + "; ".join(done)
+
+
+@tool(risk="low", timeout=180,
+      tags=["find", "search", "contents", "inside", "essay", "about", "mentions", "document", "where did i write"],
+      examples=["find_in_files(query='essay about the holocaust')", "find_in_files(query='photosynthesis lab notes')"])
+async def find_in_files(query: str, limit: int = 8, reindex: bool = False) -> dict:
+    """Find documents by what's IN them (text, code, Word, PDF, PowerPoint in Documents/Desktop/Downloads) -
+    matched by keywords and re-ranked by meaning. Use for 'the essay where I wrote about…', 'my notes on…'.
+    For names only, search_files is faster. reindex=true refreshes the index first."""
+    import asyncio
+
+    from ..memory import contentindex
+
+    if reindex or contentindex.stats()["files"] == 0:
+        await asyncio.to_thread(contentindex.build)
+    hits = await contentindex.search(query, limit)
+    if not hits:
+        raise ToolError(f"No documents mention '{query}'.",
+                        hint="Try other words, search_files for names, or reindex=true if the file is new.")
+    return {"matches": hits}

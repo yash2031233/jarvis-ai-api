@@ -108,6 +108,10 @@ RULES: list[Rule] = [
     # websites
     Rule(re.compile(r"^(?:open|go to|visit) ((?:https?://)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?)$"),
          lambda m: Route("open_url", {"url": m.group(1)})),
+    # briefing
+    Rule(re.compile(r"^(?:(?:give me |start )?(?:my |the )?(?:morning |daily )?briefing|what'?s (?:my day|on today|today) "
+                    r"(?:look(?:ing)? like)?|what (?:do i have|have i got) (?:on )?today)$"),
+         lambda m: Route("briefing", {})),
     # undo / dark mode / lock
     Rule(re.compile(r"^undo(?: that| the last (?:thing|action|change))?$"),
          lambda m: Route("undo_last_action", {})),
@@ -156,6 +160,8 @@ def speak_result(tool: str, args: dict[str, Any], output: Any) -> str:
         if "ram" in output:
             r = output["ram"]
             return f"Using {r['used_gb']} of {r['total_gb']} gigabytes of memory."
+    if isinstance(output, dict) and isinstance(output.get("text"), str):
+        return output["text"]
     if isinstance(output, str):
         return output
     return "Done."

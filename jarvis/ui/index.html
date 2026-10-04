@@ -6,6 +6,9 @@
 <title>J.A.R.V.I.S.</title>
 <meta name="jarvis-token" content="__JARVIS_TOKEN__">
 <link rel="stylesheet" href="/ui/styles.css">
+<script type="importmap">
+{ "imports": { "three": "/ui/vendor/three/build/three.module.min.js", "three/addons/": "/ui/vendor/three/addons/" } }
+</script>
 </head>
 <body>
 <div id="app">
@@ -14,6 +17,15 @@
     <span class="brand">J.A.R.V.I.S.</span>
     <span id="status" class="status" aria-live="polite"></span>
     <div class="win-controls">
+      <button id="btnStudy" class="icon-btn" title="Study" aria-label="Study">
+        <svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></svg>
+      </button>
+      <button id="btnMap" class="icon-btn" title="Map" aria-label="Map">
+        <svg viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>
+      </button>
+      <button id="btnCamera" class="icon-btn" title="Cameras" aria-label="Cameras">
+        <svg viewBox="0 0 24 24"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      </button>
       <button id="btnHistory" class="icon-btn" title="History" aria-label="History">
         <svg viewBox="0 0 24 24"><path d="M12 7v5l3 2M3 12a9 9 0 1 0 3-6.7M3 4v4h4"/></svg>
       </button>
@@ -34,6 +46,90 @@
     <div id="transcript" class="transcript" aria-live="polite"></div>
     <div id="reply" class="reply" aria-live="polite"></div>
     <ul id="activity" class="activity" aria-label="Tool activity"></ul>
+
+    <!-- 3D model mode: the part takes the centre, the orb shrinks into the corner, the conversation runs beside it -->
+    <section id="modelView" aria-label="3D model">
+      <div id="mv3d"></div>
+      <div class="mvBar" role="toolbar" aria-label="View">
+        <div class="seg">
+          <button data-view="iso" class="on">Iso</button><button data-view="front">Front</button>
+          <button data-view="back">Back</button><button data-view="left">Left</button>
+          <button data-view="right">Right</button><button data-view="top">Top</button>
+          <button data-view="bottom">Bottom</button>
+        </div>
+        <div class="seg">
+          <button data-flag="edges" class="on" title="Edges">Edges</button>
+          <button data-flag="wire" title="Wireframe">Wire</button>
+          <button data-flag="ortho" title="Orthographic">Ortho</button>
+          <button data-flag="bed" class="on" title="Print bed">Bed</button>
+          <button data-flag="spin" title="Turntable">Spin</button>
+        </div>
+      </div>
+      <div class="mvInfo">
+        <span id="mvName"></span>
+        <span id="mvSize"></span>
+        <label class="mvVer hidden">version <select id="mvVersion" aria-label="Part version"></select></label>
+        <ul id="mvIssues" class="mvIssues"></ul>
+      </div>
+      <button id="mvClose" class="icon-btn mvClose" title="Close 3D view" aria-label="Close 3D view">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <div id="mvStatus" class="mvStatus"></div>
+    </section>
+    <aside id="convo" class="convo" aria-label="Conversation"><div id="convoLog" class="convo-log"></div></aside>
+
+    <!-- study mode: decks Jarvis made; multiple choice or flip cards; misses come back sooner -->
+    <section id="studyView" aria-label="Study">
+      <div class="study-wrap">
+        <div class="study-head">
+          <button id="studyBack" class="btn subtle hidden" type="button">← Decks</button>
+          <h2 id="studyTitle">Study</h2>
+          <span id="studyMeta" class="muted small"></span>
+        </div>
+        <ul id="studyDecks" class="study-decks"></ul>
+        <div id="studyCard" class="study-card hidden">
+          <p id="scQ" class="sc-q"></p>
+          <div id="scChoices" class="sc-choices"></div>
+          <div id="scFlip" class="row hidden"><button id="scShow" class="btn primary" type="button">Show answer</button></div>
+          <div id="scAnswer" class="sc-answer hidden"></div>
+          <div id="scGrade" class="row hidden">
+            <button id="scMissed" class="btn" type="button">Missed it</button>
+            <button id="scGot" class="btn primary" type="button">Got it</button>
+          </div>
+          <div id="scNext" class="row hidden"><button id="scNextBtn" class="btn primary" type="button">Next card</button></div>
+        </div>
+      </div>
+      <button id="studyClose" class="icon-btn mvClose" title="Close study" aria-label="Close study">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </section>
+
+    <!-- camera mode: live feed + every frame Jarvis looked at, with what he made of it -->
+    <section id="camView" aria-label="Camera">
+      <div class="camTop">
+        <select id="camPick" aria-label="Camera"></select>
+        <span id="camState" class="muted small"></span>
+      </div>
+      <img id="camLive" alt="Live camera view">
+      <div id="camMsg" class="camMsg"></div>
+      <ul id="camFeed" class="camFeed" aria-label="What Jarvis saw"></ul>
+      <button id="camClose" class="icon-btn mvClose" title="Close camera" aria-label="Close camera">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </section>
+
+    <!-- map mode: where you are, routes with live ETA, turn-by-turn navigation (map.js) -->
+    <section id="mapView" aria-label="Map">
+      <div id="leaf"></div>
+      <div id="mapCard" class="mapCard"></div>
+      <div class="mapBtns">
+        <button id="mapMe" class="icon-btn" title="Follow me" aria-label="Follow my location"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg></button>
+        <button id="mapFit" class="icon-btn" title="Show everything" aria-label="Show everything"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      </div>
+      <button id="mapClose" class="icon-btn mvClose" title="Close map" aria-label="Close map">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </section>
   </main>
 
   <footer class="dock">
@@ -70,6 +166,10 @@
   <!-- history drawer -->
   <aside id="history" class="drawer left hidden" aria-label="Conversation history">
     <div class="drawer-head"><h2>History</h2><button class="icon-btn" data-close="history" aria-label="Close history"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <details id="jobsBox" class="jobs-box" open>
+      <summary>Background jobs <span id="jobsCount" class="muted small"></span></summary>
+      <ul id="jobsList" class="jobs-list"></ul>
+    </details>
     <div id="historyList" class="history-list"></div>
     <div class="row"><button id="btnClearHistory" class="btn subtle">Clear history</button></div>
   </aside>
@@ -143,6 +243,92 @@
         <label>Push-to-talk hotkey
           <input id="sHotkey" type="text" spellcheck="false">
         </label>
+      </section>
+
+      <section>
+        <h3>Cameras</h3>
+        <ul id="camList" class="cam-list"></ul>
+        <details id="camAdd">
+          <summary>Add a camera</summary>
+          <label>Name <input id="camName" type="text" placeholder="Desk, Front door…"></label>
+          <label>Type
+            <select id="camKind">
+              <option value="device">Direct connection (USB / built-in)</option>
+              <option value="ip">IP camera (network address)</option>
+            </select>
+          </label>
+          <label id="camDevRow">Device
+            <div class="row"><select id="camDevice"><option value="0">Camera 0</option></select>
+              <button id="btnCamDetect" class="btn subtle" type="button">Detect</button></div>
+          </label>
+          <label id="camUrlRow" class="hidden">Address
+            <input id="camUrl" type="text" spellcheck="false" autocomplete="off"
+                   placeholder="rtsp://user:pass@192.168.1.20:554/stream1  or  http://…/snapshot.jpg">
+            <span class="muted small">RTSP, MJPEG (http) or a snapshot URL. The address is stored in your OS keychain.</span>
+          </label>
+          <div class="row"><button id="btnCamAdd" class="btn primary" type="button">Add camera</button>
+            <span id="camAddMsg" class="muted small"></span></div>
+        </details>
+        <img id="camTestImg" class="cam-test hidden" alt="Camera test picture">
+      </section>
+
+      <section>
+        <h3>Location</h3>
+        <p class="muted small">Your phone is Jarvis's GPS: make a Telegram bot with <b>@BotFather</b>, paste its token,
+          press Pair and send the bot the code. Then share your live location with it (📎 → Location → Share My Live
+          Location). Laptops can also use their own location while the map is open.</p>
+        <label>Telegram bot token
+          <div class="row"><input id="tgToken" type="password" autocomplete="off" spellcheck="false" placeholder="123456:ABC-…">
+            <button id="btnTgSave" class="btn subtle" type="button">Save</button></div>
+        </label>
+        <div class="row"><button id="btnTgPair" class="btn subtle" type="button">Pair</button>
+          <span id="tgStatus" class="muted small"></span></div>
+        <label>Google Maps key <span class="muted small">(optional - live-traffic routes; else OpenStreetMap)</span>
+          <div class="row"><input id="gmKey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+            <button id="btnGmSave" class="btn subtle" type="button">Save</button></div>
+        </label>
+        <label class="switch"><input id="sNavVoice" type="checkbox"> Speak turn-by-turn directions</label>
+        <label>Distances
+          <select id="sNavUnits"><option value="imperial">Miles / feet</option><option value="metric">Kilometres / metres</option></select>
+        </label>
+      </section>
+
+      <section>
+        <h3>Speaking up</h3>
+        <label class="switch"><input id="sProactive" type="checkbox"> Speak up about rain, tomorrow's tests, long gaming, low battery</label>
+        <label>Check-ins (the model decides if anything is worth saying)
+          <select id="sHeartbeat">
+            <option value="0">Off</option><option value="5">Every 5 minutes</option>
+            <option value="10">Every 10 minutes</option><option value="15">Every 15 minutes</option>
+            <option value="30">Every 30 minutes</option>
+          </select>
+        </label>
+        <div class="row">
+          <label>Morning briefing at <input id="sBriefing" type="time"></label>
+          <label>Diary at <input id="sDiary" type="time"></label>
+        </div>
+        <div class="row">
+          <label>Quiet from <input id="sQuietStart" type="time"></label>
+          <label>until <input id="sQuietEnd" type="time"></label>
+        </div>
+        <div class="row">
+          <button id="btnQuiet2h" class="btn subtle" type="button">Quiet for 2 hours</button>
+          <span id="proactiveInfo" class="muted small"></span>
+        </div>
+      </section>
+
+      <section>
+        <h3>Memory</h3>
+        <label>Vault folder <span class="muted small">(empty = Jarvis's own; or an existing Obsidian vault)</span>
+          <input id="sVault" type="text" spellcheck="false" placeholder="e.g. Documents/Obsidian/My Vault">
+        </label>
+        <p id="vaultInfo" class="muted small"></p>
+        <label class="switch"><input id="sKeeper" type="checkbox"> Remember things from conversations by itself</label>
+        <label class="switch"><input id="sLearn" type="checkbox"> Learn from mistakes and corrections (the “Jarvis principles” note)</label>
+        <div class="row">
+          <button id="btnVaultOpen" class="btn subtle" type="button">Open vault</button>
+          <button id="btnKeepNow" class="btn subtle" type="button">Remember now</button>
+        </div>
       </section>
 
       <section>

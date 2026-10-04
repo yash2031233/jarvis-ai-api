@@ -37,3 +37,5 @@ Thumbs.db
 # Dev tooling
 .claude/
 bench/results/
+!packaging/jarvis.spec
+!jarvis/ui/vendor/three/build/

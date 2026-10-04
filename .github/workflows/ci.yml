@@ -27,3 +27,30 @@ jobs:
         run: ruff check jarvis tests bench --select E9,F63,F7,F82
       - name: Test
         run: pytest -q
+
+  # The real first-run path on clean machines: ./install.sh installs everything and starts Jarvis.
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Launchers are executable
+        run: test -x install.sh && test -x Jarvis.desktop && test -x Jarvis.command && ! grep -l $'\r' install.sh Jarvis.desktop Jarvis.command
+      - name: Install and start (headless)
+        run: |
+          ./install.sh --headless --no-voice --port 47821 > jarvis.out 2>&1 &
+          for i in $(seq 1 180); do
+            if curl -sf -o /dev/null http://127.0.0.1:47821/; then echo "Jarvis is up after ${i}0 s"; exit 0; fi
+            sleep 10
+          done
+          cat jarvis.out; exit 1
+      - name: Second start skips the install
+        run: |
+          pkill -f "jarvis --headless" || pkill -f "python -m jarvis" || true
+          sleep 2
+          timeout 120 ./install.sh --headless --no-voice --port 47822 > second.out 2>&1 &
+          for i in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:47822/ && exit 0; sleep 2; done
+          cat second.out; exit 1

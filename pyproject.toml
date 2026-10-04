@@ -39,8 +39,12 @@ browser = ["playwright>=1.40"]
 gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9,<10"]
 desktop = ["pynput>=1.7", "pystray>=0.19", "pillow>=10"]
 docs = ["pypdf>=4", "python-docx>=1"]
+# cameras, screen reading/recording, diagrams
+vision = ["opencv-python>=4.8", "mss>=9"]
+diagrams = ["matplotlib>=3.7", "sympy>=1.12"]
+pocket = ["pocket-tts>=3", "torch>=2.4"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.4", "pyinstaller>=6"]
-all = ["jarvis-ai-api[voice,browser,desktop,docs]"]
+all = ["jarvis-ai-api[voice,browser,desktop,docs,vision,diagrams]"]
 
 [project.scripts]
 jarvis = "jarvis.__main__:main"
@@ -49,7 +53,7 @@ jarvis = "jarvis.__main__:main"
 include = ["jarvis*"]
 
 [tool.setuptools.package-data]
-jarvis = ["ui/**/*", "router/*.json"]
+jarvis = ["ui/**/*", "router/*.json", "cad/lib/**/*", "vision/*.ps1"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

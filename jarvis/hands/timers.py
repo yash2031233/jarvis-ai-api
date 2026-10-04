@@ -123,3 +123,15 @@ def cancel_timer(id_or_label: str = "") -> str:
         task.cancel()
     bus.emit("timers", timers=list_timers_sync())
     return f"Cancelled {target['kind']} '{target['label']}'."
+
+
+@tool(risk="low", tags=["quiet", "shh", "stop interrupting", "do not disturb", "pause", "proactive"],
+      examples=["quiet(minutes=120)", "quiet(minutes=0)"])
+def quiet(minutes: int = 120) -> str:
+    """Stop Jarvis speaking up on his own for a while (minutes; 0 = allow it again)."""
+    from .. import proactive
+
+    until = proactive.pause(minutes)
+    if not until:
+        return "I'll speak up again when something's worth it."
+    return f"I'll stay quiet until {datetime.fromtimestamp(until).strftime('%I:%M %p').lstrip('0')} unless you ask."

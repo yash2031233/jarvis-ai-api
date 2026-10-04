@@ -1,0 +1,22 @@
+[
+  {"name": "headphone hook", "what": "Wall hook for over-ear headphones: a back plate that screws to the side of a desk with two countersunk M4 screws, an arm that reaches out 35 mm, and a lip at the end so they don't slide off. 35 mm wide."},
+  {"name": "cable clip", "what": "Cable clip that holds a 6 mm cable against the underside of a desk, with one screw hole for an M3 screw."},
+  {"name": "phone stand", "what": "Desk phone stand that holds a phone in landscape or portrait at about 60 degrees, with a front lip 8 mm tall and a slot for the charging cable. Phone is 9 mm thick, 75 mm wide."},
+  {"name": "pencil cup", "what": "Round pencil cup, 70 mm diameter, 95 mm tall, 2.4 mm walls, closed bottom."},
+  {"name": "spacer", "what": "A 10 mm tall round spacer for an M5 bolt, 12 mm outer diameter."},
+  {"name": "l bracket", "what": "L-shaped corner bracket, 40 mm per leg, 20 mm wide, 4 mm thick, with one countersunk M4 hole in each leg and a triangular gusset for strength."},
+  {"name": "desk clip", "what": "C-clip that slides onto the edge of a 25 mm thick desk, 20 mm wide, with a small hook underneath for a bag strap."},
+  {"name": "tray", "what": "Small parts tray 120 x 80 mm, 25 mm tall, with 6 equal compartments and rounded corners."},
+  {"name": "knob", "what": "Knurled knob for a 6 mm D-shaft, 25 mm diameter, 15 mm tall, with a flat on the shaft hole."},
+  {"name": "name plate", "what": "Flat plate 90 x 30 x 3 mm with two 3.5 mm mounting holes near the ends and chamfered top edges."},
+  {"name": "ssd bracket", "what": "Bracket to mount a 2.5 inch SSD (100 x 70 x 7 mm) under a desk: a tray with side walls, two screw tabs with M4 holes."},
+  {"name": "hex key holder", "what": "Holder block for metric hex keys 1.5, 2, 2.5, 3, 4, 5 and 6 mm, keys stand upright in holes in a row, 15 mm deep holes."},
+  {"name": "plant saucer", "what": "Round plant saucer, 140 mm diameter, 18 mm tall, with 6 small feet underneath."},
+  {"name": "wall plug cover", "what": "Rectangular cover plate 70 x 120 mm, 3 mm thick, with a centered 30 x 60 mm rectangular cutout and two screw holes 96 mm apart."},
+  {"name": "headphone stand", "what": "Freestanding headphone stand: round base 110 mm diameter, a post 220 mm tall, and a curved cradle on top 60 mm wide."},
+  {"name": "drawer pull", "what": "Drawer pull handle with 96 mm hole spacing, two M4 threaded-insert bosses, comfortable 15 mm grip height."},
+  {"name": "gopro mount", "what": "GoPro-style 3-prong mount on a flat base 40 x 40 mm with two M3 holes."},
+  {"name": "funnel", "what": "Small funnel, top opening 80 mm, spout 10 mm outer diameter, total height 70 mm, 1.6 mm walls."},
+  {"name": "earbud case", "what": "Two-part earbud case: a box 60 x 40 x 25 mm with 2 mm walls and a separate lid that press-fits with 0.3 mm clearance, both laid out flat on the bed."},
+  {"name": "pegboard hook", "what": "Pegboard hook for 1/4 inch holes on 1 inch spacing: two pegs that go into the board and a 50 mm straight hook out the front."}
+]

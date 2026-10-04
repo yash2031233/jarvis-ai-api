@@ -9,7 +9,7 @@ Default brain: NVIDIA (build.nvidia.com). v1 (private, fully local) stays as-is.
 - Local-first voice that scales with hardware; pluggable brain
 - Safe by default — strangers run this on their machines
 
-Legend: **[v1]** = first release · **[later]** = roadmap
+Legend: **[v1]** = first release · **[v1.1]** = shipped in the Phase 1/2 update · **[later]** = roadmap
 
 ---
 
@@ -201,10 +201,12 @@ Local is the default: faster on decent hardware, free, private, works offline, d
 ## 9. 💾 Memory
 - [v1] Conversation history (SQLite)
 - [v1] Clear history
-- [later] Long-term memory (facts about you — viewable & editable)
+- [v1.1] Long-term memory: an Obsidian-compatible Markdown vault; a memory keeper files facts from conversations by itself
+- [v1.1] Nightly diary in the vault; "what did I do on Tuesday?"
+- [v1.1] Find files by content: SQLite FTS5 + embeddings (auto-detected from the provider), hybrid ranking
+- [v1.1] Learning: reflection on request traces → merged principles added to every prompt
 - [later] Search past conversations
 - [later] Per-project / per-topic memory
-- [later] Document Q&A (point at a folder)
 
 ## 10. 🖥️ UI
 **Full spec: [UI_ORB.md](UI_ORB.md)** · Reference image: [reference/orb-reference.webp](reference/orb-reference.webp)
@@ -224,12 +226,24 @@ The main screen is minimal: **the Jarvis orb, a prompt box, voice controls and a
 - [later] Themes / skins (Iron Man, minimal, retro terminal)
 - [later] Mobile / web remote control
 
-## 11. ⏰ Proactive & Automation [later]
-- Morning briefing (weather, calendar, news)
-- Scheduled routines ("every day at 9pm summarize my downloads")
-- Event triggers (low battery, download finished, build failed)
-- Idle check-ins / reminders
+## 11. ⏰ Proactive & Automation
+- [v1.1] Morning briefing (weather, today's tests/deadlines from memory, reminders, to-dos, finished jobs)
+- [v1.1] Rule-based heads-ups (rain, tomorrow's tests, long gaming sessions, battery) + optional model heartbeat; quiet hours, cooldowns
+- [v1.1] Background jobs: long tasks run in a separate agent with their own progress view
+- [v1.1] Habit compiler: repeated tool sequences become sandboxed, test-run, judged tools
+- [later] Scheduled routines ("every day at 9pm summarize my downloads")
+- [later] More event triggers (download finished, build failed)
 - Voice macros ("Jarvis, work mode" → opens your app set)
+
+## 11b. 🧊 3D CAD, 👁️ Eyes, 📚 Study [v1.1]
+- 3D CAD (`print3d`): plan-first OpenSCAD (BOSL2 bundled) → compile/fix loop → mesh checks (watertight, bounds, bed) → vision self-review of 4 renders → three.js viewer; versions, revert, STL export
+- Screen: local OCR (Windows OCR, RapidOCR/Tesseract fallback), find/click text, input, screenshots, vision look, screen recording to mp4
+- Cameras: direct webcam (auto-detected) or IP camera (RTSP / MJPEG / snapshot URL, credentials in keychain); look, watch-for, read, presence, live view
+- Study sessions (flashcards / quiz from notes or files) and diagrams (graphs, geometry, charts, flowcharts)
+- Pocket TTS voices (optional, streaming, ~0.1 s to first audio on GPU) with Kokoro fallback
+- Location & navigation (ported from v1): phone GPS via your own Telegram bot (or this device), routes with live ETA (OSRM + Valhalla re-timed, or Google live traffic with a key), Google-Maps-style spoken turn-by-turn with rerouting and faster-route checks, nearby, saved places, location reminders, trip
+- Every screen and setting is also a tool: settings, camera_setup, show_panel, conversation_history, message_phone
+- Tool calls shown in the conversation and History (live chips with timings)
 
 ## 12. 🛠️ Hardware & Performance
 - [v1] GPU detection (CUDA; Blackwell — RTX 50xx / RTX Pro 6000 — needs CUDA 12.8+ and recent PyTorch/CTranslate2)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -45,7 +46,7 @@ class Brain:
     # ------------------------------------------------------------- client
     def client(self) -> AsyncOpenAI:
         s = config.store.load()
-        key = config.get_api_key() or ("ollama" if s.provider == "ollama" else "")
+        key = config.get_api_key() or ("local" if s.provider in ("ollama", "lmstudio") else "")
         if not key:
             raise BrainError("No API key set. Open Settings and paste your key.", "auth")
         if not s.base_url:
@@ -265,6 +266,35 @@ class Brain:
                 on_text(text)  # it was plain text after all
         result.text = text
         return result
+
+    # ------------------------------------------------------------- one-shot completion
+    async def complete(self, messages: list[dict[str, Any]], max_tokens: int = 4000, temperature: float = 0.2,
+                       think: bool = False) -> tuple[str, str | None]:
+        """Non-streaming call for internal jobs (e.g. writing OpenSCAD). Returns (text, finish_reason).
+
+        On local servers thinking is switched off unless asked for: v1 measured a 36-line part at
+        203 s with thinking on (and it still didn't compile) vs seconds with it off.
+        """
+        s = config.store.load()
+        extra: dict[str, Any] = {}
+        if not think and s.provider in ("lmstudio", "ollama"):
+            extra["reasoning_effort"] = "none"
+        for attempt in range(4):
+            try:
+                r = await self.client().chat.completions.create(
+                    model=self.model(), messages=messages, max_tokens=max_tokens, temperature=temperature,
+                    extra_body=extra or None,
+                )
+                ch = r.choices[0]
+                text = re.sub(r"<think>.*?</think>", "", ch.message.content or "", flags=re.S).strip()
+                return text, ch.finish_reason
+            except Exception as e:
+                err = self._wrap(e)
+                if err.kind in ("rate_limit", "connection", "server") and attempt < 3:
+                    await asyncio.sleep(min(15.0, 2 ** attempt + random.random()))
+                    continue
+                raise err from e
+        raise BrainError("Model did not respond after several retries.", "connection")
 
     # ------------------------------------------------------------- errors
     @staticmethod

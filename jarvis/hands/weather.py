@@ -20,11 +20,15 @@ async def _locate(city: str) -> tuple[float, float, str]:
             raise ToolError(f"Unknown place '{city}'.")
         g = res[0]
         return g["latitude"], g["longitude"], f"{g['name']}, {g.get('country', '')}".strip(", ")
-    r = await client().get("https://ipapi.co/json/")
-    j = r.json()
-    if "latitude" not in j:
+    # The user's real position when Jarvis has one (phone GPS / this device), else the internet connection's city.
+    import asyncio
+
+    from .. import geo
+
+    p = await asyncio.to_thread(geo.here, False, True)
+    if not p:
         raise ToolError("Couldn't detect your location.", hint="Pass a city name.")
-    return j["latitude"], j["longitude"], f"{j.get('city', '')}, {j.get('country_name', '')}"
+    return p["lat"], p["lon"], (p.get("city") or "your area") if p.get("approx") else "your location"
 
 
 @tool(risk="low", tags=["weather", "temperature", "forecast", "rain", "hot", "cold", "outside"],

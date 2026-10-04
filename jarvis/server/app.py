@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import secrets
+import threading
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -79,11 +80,25 @@ async def lifespan(app: FastAPI):
     state["plugins"] = load_plugins(PLUGIN_DIRS)
     apps_mod.warm()
     files_mod.warm()
+    from ..memory import contentindex
+
+    contentindex.warm()
     collector = asyncio.create_task(_metrics_collector())
+    from ..memory import keeper
+
+    keeper_task = asyncio.create_task(keeper.loop(lambda: agent.busy.locked()))
+    from .. import proactive
+
+    proactive_task = asyncio.create_task(proactive.loop(lambda: agent.busy.locked()))
+    from .. import telegram
+
+    telegram.start()
     start_voice()
     log.info("Jarvis %s ready - %d tools, plugins: %s", __version__, len(registry.tools), state["plugins"])
     yield
     collector.cancel()
+    keeper_task.cancel()
+    proactive_task.cancel()
     if state["voice"]:
         state["voice"].shutdown()
 
@@ -93,8 +108,11 @@ app = FastAPI(title="Jarvis", version=__version__, lifespan=lifespan)
 
 @app.middleware("http")
 async def token_guard(request: Request, call_next):
-    if request.url.path.startswith("/api/") and request.headers.get("x-jarvis-token") != TOKEN:
-        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    if request.url.path.startswith("/api/"):
+        # <img> tags (live camera, photos, diagrams) can't send headers, so those also accept ?token=
+        tok = request.headers.get("x-jarvis-token") or request.query_params.get("token")
+        if not tok or not secrets.compare_digest(tok, TOKEN):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
     return await call_next(request)
 
 
@@ -167,15 +185,23 @@ async def post_settings(body: dict[str, Any]):
         if preset:
             changes["base_url"] = preset
     try:
-        s = config.store.update(**changes)
+        config.store.update(**changes)
     except Exception as e:
         raise HTTPException(400, str(e))
+    apply_settings()
+    return _settings_payload()
+
+
+def apply_settings() -> None:
+    """Make saved settings take effect now (voice, speed, voice on). Also used by the `settings` tool."""
+    s = config.store.load()
     vp = state["voice"]
     if vp:
         vp.tts.voice, vp.tts.speed = s.tts_voice, s.tts_speed
+        if s.tts_voice.startswith("pocket:") and vp.tts.pocket is None:
+            threading.Thread(target=vp.tts._load_pocket, daemon=True, name="pocket-load").start()
     if s.voice_enabled and not vp:
         start_voice()
-    return _settings_payload()
 
 
 @app.post("/api/key")
@@ -262,6 +288,419 @@ async def devices():
         return {"inputs": []}
 
 
+# ---------------------------------------------------------------------------- CAD
+_CAD_FILES = {"part.stl", "part.3mf", "part.scad", "preview.png"}
+
+
+@app.get("/api/cad/file/{part}/{version}/{name}")
+async def cad_file(part: str, version: int, name: str):
+    from ..cad import designer
+
+    if name not in _CAD_FILES and not (name.startswith("preview_") and name.endswith(".png")):
+        raise HTTPException(404)
+    if designer.slug(part) != part:
+        raise HTTPException(404)
+    f = designer.vdir(part, version) / name
+    if not f.exists():
+        raise HTTPException(404)
+    return FileResponse(f, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/cad/state")
+async def cad_state():
+    """What the model view showed last, so a reload comes back to the same part."""
+    from ..cad import designer
+
+    s = designer.load_state()
+    if not s.get("open") or not s.get("part") or not designer.versions_of(s["part"]):
+        return {"open": False}
+    p = dict(s)
+    v = s.get("version") or designer.versions_of(s["part"])[-1]
+    meta = designer.read_meta(s["part"], v)
+    p.update(name=s["part"].replace("_", " "), version=v, versions=designer.versions_of(s["part"]),
+             url=designer.stl_url(s["part"], v), size_mm=meta.get("size_mm"), issues=meta.get("issues", []))
+    return p
+
+
+@app.post("/api/cad/close")
+async def cad_close():
+    from ..cad import designer
+
+    designer.save_state(open=False)
+    return {"ok": True}
+
+
+@app.post("/api/cad/show")
+async def cad_show(body: dict[str, Any]):
+    from ..cad import designer
+
+    try:
+        return designer.show(designer.resolve(str(body.get("part", ""))), body.get("version") or None)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/cad/parts")
+async def cad_parts():
+    from ..cad import designer
+
+    return {"parts": designer.parts()}
+
+
+# ---------------------------------------------------------------------------- cameras
+def _cams():
+    from ..vision import cameras
+
+    return cameras
+
+
+# ---------------------------------------------------------------------------- location / map / navigation
+_last_app_fix = [0.0]
+_geo_addr: dict[str, Any] = {}
+
+
+@app.get("/api/geo/state")
+async def geo_state():
+    """Everything the map needs when it's opened by hand: where you are, today's trail, places, reminders."""
+    from .. import geo
+
+    def gather():
+        me = geo.latest()
+        address = None
+        if me:   # a street name reads better than coordinates on the card (cached per ~50 m)
+            key = (round(me["lat"], 3), round(me["lon"], 3))
+            if _geo_addr.get("key") != key:
+                try:
+                    _geo_addr.update(key=key, address=geo.reverse(me["lat"], me["lon"]))
+                except Exception:
+                    _geo_addr.update(key=None, address=None)
+            address = _geo_addr.get("address")
+        out = {"view": "me", "me": geo.me_view(me), "address": address,
+               "trail": [[p["lat"], p["lon"]] for p in geo.trail(12)],
+               "places": geo.places_list(), "reminders": geo.active_reminders()}
+        cur = geo.MAP_STATE
+        if cur.get("view") == "route" and cur.get("route"):   # a route in progress: reopen it
+            out.update(view="route", route=cur["route"])
+        return out
+
+    s = config.store.load()
+    return {**(await asyncio.to_thread(gather)), "units": s.nav_units, "voice": s.nav_voice}
+
+
+@app.post("/api/geo/fix")
+async def geo_fix(body: dict[str, Any]):
+    """This device's own GPS / Wi-Fi position (the map asks the browser for it). Kept at most every 3 s in the track
+    so reminders and "where am I" stay current; the map itself uses every fix."""
+    from .. import geo
+
+    lat, lon = float(body["lat"]), float(body["lon"])
+    now = time.time()
+    if now - _last_app_fix[0] < 3:
+        return {"ok": True, "kept": False}
+    _last_app_fix[0] = now
+    fired = await asyncio.to_thread(geo.record, lat, lon, body.get("acc"), body.get("heading"), True, None, "device")
+    return {"ok": True, "kept": True, "reminders": fired}
+
+
+@app.post("/api/geo/reroute")
+async def geo_reroute(body: dict[str, Any]):
+    """Off the route: a new one from where you are now to the same place, the same way (drive / walk / bike).
+    check=true only looks (is there a faster way?) without changing the map."""
+    from .. import geo
+
+    cur = geo.MAP_STATE.get("route") or {}
+    to, mode = body.get("to") or cur.get("to"), body.get("mode") or cur.get("mode") or "drive"
+    if not to:
+        raise HTTPException(400, "no route to redo")
+    try:
+        r = await asyncio.to_thread(geo.route, to, {"lat": float(body["lat"]), "lon": float(body["lon"])}, mode)
+    except Exception as e:
+        raise HTTPException(502, f"reroute failed: {e}")
+    r["to"] = to
+    if geo.MAP_STATE.get("view") == "route" and not body.get("check"):
+        geo.MAP_STATE["route"] = r
+    return {"route": r}
+
+
+@app.post("/api/geo/say")
+async def geo_say(body: dict[str, Any]):
+    """A spoken navigation line in Jarvis's own voice. urgent=true cuts off whatever he's saying (a turn beats a
+    chat reply). Returns spoken=false when voice is off, so the map can use the browser's voice instead."""
+    vp = state["voice"]
+    text = str(body.get("text", ""))[:300]
+    if not (vp and vp.tts.kokoro is not None and text):
+        return {"spoken": False}
+    if body.get("urgent"):
+        vp.tts.stop()
+    vp.tts.say(text)
+    return {"spoken": True}
+
+
+@app.post("/api/geo/close")
+async def geo_close():
+    from .. import geo
+
+    geo.MAP_STATE.clear()
+    return {"ok": True}
+
+
+@app.get("/api/telegram")
+async def telegram_status():
+    from .. import telegram
+
+    return telegram.status()
+
+
+@app.post("/api/telegram")
+async def telegram_set(body: dict[str, Any]):
+    """token: set/replace the bot token (empty removes it) · pair: get a code to send the bot · unpair."""
+    from .. import telegram
+
+    if "token" in body:
+        config.set_secret(telegram.TOKEN_KEY, str(body["token"]).strip())
+        if not body["token"]:
+            config.store.update(telegram_chat_id=None)
+        telegram.start()
+        await asyncio.sleep(1.5)        # let it say hello to Telegram so the status shows the bot's name
+    if body.get("unpair"):
+        config.store.update(telegram_chat_id=None)
+    if body.get("pair"):
+        telegram.new_pair_code()
+    return telegram.status()
+
+
+@app.post("/api/maps-key")
+async def maps_key(body: dict[str, Any]):
+    from .. import geo
+
+    config.set_secret(geo.GOOGLE_KEY, str(body.get("key", "")).strip())
+    return {"set": bool(config.get_secret(geo.GOOGLE_KEY))}
+
+
+@app.get("/api/maps-key")
+async def maps_key_status():
+    from .. import geo
+
+    return {"set": bool(config.get_secret(geo.GOOGLE_KEY))}
+
+
+@app.get("/api/camera/list")
+async def camera_list():
+    cams = await asyncio.to_thread(_cams().hub.all)
+    s = config.store.load()
+    d = s.default_camera or (cams[0].id if cams else "")
+    configured = {c["id"] for c in s.cameras}
+    return {"cameras": [{**c.info(), "default": c.id == d, "auto": c.id not in configured} for c in cams]}
+
+
+@app.get("/api/camera/devices")
+async def camera_devices():
+    try:
+        return {"devices": await asyncio.to_thread(_cams().detect_devices)}
+    except Exception as e:
+        return {"devices": [], "error": str(e)}
+
+
+@app.post("/api/camera/add")
+async def camera_add(body: dict[str, Any]):
+    try:
+        return _cams().add_camera(str(body.get("name", "")), str(body.get("kind", "")),
+                                  int(body.get("device", 0) or 0), str(body.get("url", "")))
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/camera/remove")
+async def camera_remove(body: dict[str, Any]):
+    _cams().remove_camera(str(body.get("id", "")))
+    return {"ok": True}
+
+
+@app.post("/api/camera/default")
+async def camera_default(body: dict[str, Any]):
+    config.store.update(default_camera=str(body.get("id", "")))
+    return {"ok": True}
+
+
+@app.get("/api/camera/{cid}/snapshot")
+async def camera_snapshot(cid: str):
+    from fastapi.responses import Response
+
+    cams = _cams()
+    try:
+        cam = await asyncio.to_thread(cams.hub.get, cid)
+        img = await asyncio.to_thread(cam.frame)
+    except Exception as e:
+        raise HTTPException(502, str(e))
+    return Response(cams.encode_jpeg(img), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/camera/{cid}/stream")
+async def camera_stream(cid: str, request: Request):
+    """Live view (MJPEG) for the camera panel. Keeps the camera open while someone watches."""
+    from fastapi.responses import StreamingResponse
+
+    cams = _cams()
+    try:
+        cam = await asyncio.to_thread(cams.hub.get, cid)
+    except Exception as e:
+        raise HTTPException(404, str(e))
+
+    async def gen():
+        boundary = b"--frame\r\n"
+        while not await request.is_disconnected():
+            try:
+                img = await asyncio.to_thread(cam.frame, 0.5)
+                jpg = await asyncio.to_thread(cams.encode_jpeg, img, 75, 960)
+            except Exception:
+                await asyncio.sleep(1)
+                continue
+            yield boundary + b"Content-Type: image/jpeg\r\nContent-Length: " + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n"
+            await asyncio.sleep(1 / 12)
+
+    return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame",
+                             headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/camera/snap/{name}")
+async def camera_snap(name: str):
+    from ..hands.camera import snap_path
+
+    p = snap_path(name)
+    if not p:
+        raise HTTPException(404)
+    return FileResponse(p, headers={"Cache-Control": "no-store"})
+
+
+# ---------------------------------------------------------------------------- media (diagrams, pictures in chat)
+@app.get("/api/media/{name}")
+async def media_file(name: str):
+    root = config.DATA_DIR / "media"
+    p = (root / name).resolve()
+    if p.parent != root.resolve() or not p.exists() or p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+        raise HTTPException(404)
+    return FileResponse(p, headers={"Cache-Control": "max-age=86400"})
+
+
+# ---------------------------------------------------------------------------- background jobs
+@app.get("/api/jobs")
+async def jobs_list():
+    from ..agent import jobs
+
+    return {"jobs": jobs.all_jobs()}
+
+
+@app.get("/api/jobs/{jid}")
+async def jobs_get(jid: str):
+    from ..agent import jobs
+
+    try:
+        return jobs.get(jid)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/api/jobs/{jid}/cancel")
+async def jobs_cancel(jid: str):
+    from ..agent import jobs
+
+    try:
+        return jobs.cancel(jid)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.delete("/api/jobs/{jid}")
+async def jobs_delete(jid: str):
+    from ..agent import jobs
+
+    jobs.delete(jid)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------- study decks
+@app.get("/api/study")
+async def study_list():
+    from ..hands import study
+
+    return {"decks": study.decks()}
+
+
+@app.get("/api/study/deck/{deck}")
+async def study_deck(deck: str):
+    from ..hands import study
+
+    try:
+        d = study.load(deck)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    return {"deck": d["name"], "due": [c["id"] for c in study.due(d)], "cards": d["cards"]}
+
+
+@app.post("/api/study/grade")
+async def study_grade(body: dict[str, Any]):
+    from ..hands import study
+
+    try:
+        return study.grade(str(body.get("deck")), str(body.get("card_id")), bool(body.get("right")))
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.delete("/api/study/deck/{deck}")
+async def study_delete(deck: str):
+    from ..hands import study
+
+    try:
+        d = study.load(deck)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    study._path(d["name"]).unlink(missing_ok=True)
+    return {"deleted": d["name"]}
+
+
+# ---------------------------------------------------------------------------- proactivity
+@app.get("/api/proactive")
+async def proactive_status():
+    from .. import proactive
+
+    return proactive.status()
+
+
+@app.post("/api/proactive/pause")
+async def proactive_pause(body: dict[str, Any]):
+    from .. import proactive
+
+    return {"quiet_until": proactive.pause(float(body.get("minutes", 120)))}
+
+
+# ---------------------------------------------------------------------------- memory vault
+@app.get("/api/vault")
+async def vault_info():
+    from ..memory import keeper, vault
+
+    return {"path": str(vault.root()), "notes": vault.summary(), "keeper": keeper.status()}
+
+
+@app.post("/api/vault/open")
+async def vault_open():
+    from ..hands.osutil import open_path
+    from ..memory import vault
+
+    open_path(str(vault.root()))
+    return {"ok": True}
+
+
+@app.post("/api/vault/keep-now")
+async def vault_keep_now():
+    from ..memory import keeper
+
+    try:
+        return {"filed": await keeper.run_once(force=True)}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 @app.get("/api/stats")
 async def stats():
     def summary(v: list[int]) -> dict[str, int]:
@@ -281,7 +720,8 @@ async def ws(socket: WebSocket):
     q = bus.subscribe()
     vp = state["voice"]
     await socket.send_json({"type": "hello", "voice_status": vp.status if vp else "off",
-                            "key_set": bool(config.get_api_key()), "model": config.store.load().model})
+                            "key_set": bool(config.get_api_key()), "model": config.store.load().model,
+                            "local": config.store.load().provider in ("lmstudio", "ollama")})
 
     async def pump():
         while True:
