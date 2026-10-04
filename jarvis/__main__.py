@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import socket
+import sys
 import threading
 import time
 import webbrowser
@@ -124,7 +125,20 @@ def main() -> None:
     ap.add_argument("--version", action="version", version=f"jarvis {__version__}")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+    # Always keep a log file; when started without a console (pythonw / Jarvis.exe) it's the only output.
+    log_dir = config.DATA_DIR / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    if sys.stdout is None or sys.stderr is None:
+        stream = open(log_dir / "console.log", "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+        sys.stdout = sys.stdout or stream
+        sys.stderr = sys.stderr or stream
+    from logging.handlers import RotatingFileHandler
+
+    handlers: list[logging.Handler] = [
+        RotatingFileHandler(log_dir / "jarvis.log", maxBytes=2_000_000, backupCount=2, encoding="utf-8"),
+        logging.StreamHandler(),
+    ]
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname).1s %(name)s: %(message)s", datefmt="%H:%M:%S")
     for noisy in ("httpx", "httpcore", "uvicorn.access", "openai", "faster_whisper"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
