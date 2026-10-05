@@ -545,3 +545,8 @@ body.navOn[data-mode="map"] #mapView { right: 0 !important; }
   body[data-mode="map"] #orb { bottom: calc(40% + 10px); width: 72px; height: 72px; }
   .camFeed { bottom: calc(40% + 10px); width: 46%; height: auto; }
 }
+
+/* the map in full screen (its own button): edge to edge, no conversation */
+body.mapFull[data-mode="map"] #convo { display: none; }
+body.mapFull[data-mode="map"] #mapView { right: 0; bottom: 0; }
+body.mapFull .mapBtns #mapFull { color: var(--accent); border-color: var(--line-strong); }

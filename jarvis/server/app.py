@@ -136,7 +136,12 @@ async def token_guard(request: Request, call_next):
         tok = request.headers.get("x-jarvis-token") or request.query_params.get("token")
         if not tok or not secrets.compare_digest(tok, TOKEN):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-    return await call_next(request)
+    resp = await call_next(request)
+    if request.url.path.startswith("/ui/") and "/vendor/" not in request.url.path:
+        # the app's own code: always check for a newer copy (an update must show up on the next start, never an
+        # old cached screen); unchanged files come back as a quick "304 not modified"
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 # ---------------------------------------------------------------------------- UI

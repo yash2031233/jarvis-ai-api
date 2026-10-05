@@ -246,6 +246,7 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
   }
   function close() {
     nav.stop(true);
+    if (document.body.classList.contains("mapFull")) fullscreen(false);
     onClose();
     api("/api/geo/close", { method: "POST" }).catch(() => {});
   }
@@ -294,6 +295,21 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
     map.flyTo([state.me.lat, state.me.lon], Math.max(map.getZoom(), 16));
   });
   $("#mapFit").addEventListener("click", () => { if (map) frame(state); });
+  // full screen (the map only): the conversation steps aside and the window goes full screen where it can
+  function fullscreen(on = !document.body.classList.contains("mapFull")) {
+    document.body.classList.toggle("mapFull", on);
+    $("#mapFull").title = on ? "Exit full screen" : "Full screen";
+    try {
+      if (on && !document.fullscreenElement) document.documentElement.requestFullscreen().then(() => { wentFull = true; }).catch(() => {});
+      if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    } catch { /* no Fullscreen API here (iPhone): the map still fills the app */ }
+    if (!on) wentFull = false;
+    setTimeout(() => map && map.invalidateSize(), 120);
+  }
+  $("#mapFull").addEventListener("click", () => fullscreen());
+  let wentFull = false;                 // only leaving real full screen (Esc / F11) turns the map's full screen off
+  document.addEventListener("fullscreenchange", () => { if (wentFull && !document.fullscreenElement && document.body.classList.contains("mapFull")) fullscreen(false); });
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.classList.contains("mapFull")) fullscreen(false); });
   $("#mapClose").addEventListener("click", close);
 
   // =============================================================================================================
