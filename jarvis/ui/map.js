@@ -203,6 +203,7 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
   }
 
   function frame(s) {
+    if (nav.on && !nav.browsing) return;                    // navigating: the follow-cam owns the view
     const pts = [];
     if (s.view === "route" && route) pts.push(...route.geometry);
     else if (s.view === "nearby" && s.nearby) pts.push(...(s.nearby.results || []).map((h) => [h.lat, h.lon]));
@@ -318,7 +319,7 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
   const nav = (() => {
     const N = { on: false, watch: null, lastLocal: 0, pos: null, from: null, to: null, t0: 0, dur: 1000, heading: 0, hdgGoal: 0,
                 speed: 0, raf: 0, said: new Set(), afterTurn: -1, off: 0, rerouteAt: 0, arrived: false, muted: false,
-                lock: null, lastFixAt: 0, wantZoom: 17 };
+                lock: null, lastFixAt: 0, wantZoom: 17, browse: false, carMk: null };
     const body = document.body;
     try { N.muted = localStorage.getItem("jarvisNavMute") === "1"; } catch { /* private */ }
     // ---- distances the way people read them out (miles/feet, or km/m)
@@ -385,7 +386,9 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
       const mv = $("#mapView");
       mv.insertAdjacentHTML("beforeend", `<div id="navTop" class="navTop"><span class="navArr">↑</span><div><b class="navDist"></b><div class="navText"></div></div><div class="navThen"></div></div>
         <div id="navBot" class="navBot"><div class="navEta"><b class="navMin">–</b><span>min</span></div><div class="navMeta"><span class="navLeft"></span><span class="navClock"></span></div>
-          <button class="navMute" aria-label="Mute directions"></button><button class="navExit">Exit</button></div>`);
+          <button class="navMute" aria-label="Mute directions"></button><button class="navExit">Exit</button></div>
+        <button id="navRecenter" class="navRecenter" type="button" aria-label="Re-center on my position"><svg viewBox="0 0 40 48" aria-hidden="true"><path d="M20 3 L37 44 L20 34 L3 44 Z"/></svg>Re-center</button>`);
+      $("#navRecenter").onclick = () => follow();
       $(".navExit").onclick = () => stop();
       $(".navMute").onclick = () => { N.muted = !N.muted; try { localStorage.setItem("jarvisNavMute", N.muted ? "1" : "0"); } catch { /* fine */ } paintMute(); if (!N.muted) speak("Voice guidance on."); };
       paintMute();
@@ -404,8 +407,9 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
       body.classList.add("navOn");
       persp();
       if (map) { map.options.zoomSnap = 0; layers.me.clearLayers(); }
-      followMe = true;
-      if (map) { map.dragging.disable(); map.touchZoom.disable(); map.doubleClickZoom.disable(); }
+      followMe = true; N.browse = false; body.classList.remove("navBrowse");
+      if (map) { map.dragging.disable(); map.touchZoom.disable(); map.doubleClickZoom.disable(); map.scrollWheelZoom.disable(); }
+      if (fresh && map && state.me) map.setView([state.me.lat, state.me.lon], N.wantZoom, { animate: false });   // straight to the car
       setTimeout(() => map && map.invalidateSize(), 50);
       if (navigator.geolocation && N.watch == null) {
         N.watch = navigator.geolocation.watchPosition((g) => {
@@ -425,8 +429,51 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
       repaint(); setTimeout(repaint, 900); setTimeout(repaint, 2500);
       const go = $("#navGo"); if (go) go.textContent = "Navigating…";
     }
+    // ---- looking around while driving, like Google Maps: touch the map (drag, pinch, scroll) and it lies flat, north
+    // up, under your fingers - the car keeps moving on it - until Re-center brings the follow-cam back.
+    function browse() {
+      if (!N.on || N.browse || !map) return;
+      N.browse = true; followMe = false;
+      body.classList.add("navBrowse");
+      const lf = $("#leaf"); if (lf) lf.style.transform = "";
+      map.invalidateSize({ pan: false });
+      if (N.pos) map.setView(N.pos, map.getZoom(), { animate: false });
+      map.dragging.enable(); map.touchZoom.enable(); map.doubleClickZoom.enable(); map.scrollWheelZoom.enable();
+      drawCar();
+    }
+    function follow() {
+      if (!N.on || !map) return;
+      N.browse = false; followMe = true;
+      body.classList.remove("navBrowse");
+      if (N.carMk) { N.carMk.remove(); N.carMk = null; }
+      map.dragging.disable(); map.touchZoom.disable(); map.doubleClickZoom.disable(); map.scrollWheelZoom.disable();
+      persp();
+      if (N.pos) map.setView(N.pos, N.wantZoom, { animate: false });
+      repaint(); setTimeout(repaint, 600);
+    }
+    function drawCar() {                       // browsing: the car is a marker on the flat map, pointing where it's going
+      if (!N.browse || !N.pos) return;
+      const html = `<div class="navCar" style="transform:rotate(${N.heading}deg)"><svg viewBox="0 0 40 48"><path d="M20 3 L37 44 L20 34 L3 44 Z"/></svg></div>`;
+      if (!N.carMk) N.carMk = L.marker(N.pos, { icon: L.divIcon({ className: "navCarIcon", html, iconSize: [34, 40], iconAnchor: [17, 20] }), interactive: false, zIndexOffset: 1000 }).addTo(map);
+      else { N.carMk.setLatLng(N.pos); const el = N.carMk.getElement(); const c = el && el.firstChild; if (c) c.style.transform = `rotate(${N.heading}deg)`; }
+    }
+    // the first touch on the following map switches to browsing *before* Leaflet sees it, so that same gesture
+    // already pans / zooms (and the wheel zooms right away)
+    const mv0 = $("#mapView");
+    const grab = (e) => {
+      if (!N.on || N.browse || !e.target.closest || !e.target.closest("#leaf")) return;
+      browse();
+    };
+    for (const ev of ["pointerdown", "mousedown", "touchstart"]) mv0.addEventListener(ev, grab, { capture: true, passive: true });
+    mv0.addEventListener("wheel", (e) => {
+      if (!N.on || N.browse || !e.target.closest || !e.target.closest("#leaf")) return;
+      e.preventDefault(); browse();
+      map.setZoom(map.getZoom() + (e.deltaY > 0 ? -1 : 1));
+    }, { capture: true, passive: false });
+
     function stop(quiet) {
       if (!N.on) return;
+      if (N.browse) { N.browse = false; body.classList.remove("navBrowse"); if (N.carMk) { N.carMk.remove(); N.carMk = null; } }
       N.on = false;
       body.classList.remove("navOn", "navLand");
       if (N.watch != null && navigator.geolocation) navigator.geolocation.clearWatch(N.watch);
@@ -436,7 +483,7 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
       const lf = $("#leaf"); if (lf) lf.style.transform = "";
       N.routeKey = null;
       if (map) { map.options.zoomSnap = 1; map.setZoom(Math.round(map.getZoom()), { animate: false }); }
-      if (map) { map.dragging.enable(); map.touchZoom.enable(); map.doubleClickZoom.enable(); setTimeout(() => { map.invalidateSize(); frame(state); drawMe(state.me); }, 80); }
+      if (map) { map.dragging.enable(); map.touchZoom.enable(); map.doubleClickZoom.enable(); map.scrollWheelZoom.enable(); setTimeout(() => { map.invalidateSize(); frame(state); drawMe(state.me); }, 80); }
       if (!quiet) speak("Navigation ended.", { urgent: true });
       const go = $("#navGo"); if (go) go.textContent = "▶ Start navigation";
     }
@@ -574,12 +621,13 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
       const from = N.from || N.to;
       N.pos = [from[0] + (N.to[0] - from[0]) * k, from[1] + (N.to[1] - from[1]) * k];
       const dh = ((N.hdgGoal - N.heading + 540) % 360) - 180; N.heading = (N.heading + dh * 0.08 + 360) % 360;
+      if (N.browse) { drawCar(); return; }
       if (!followMe || body.dataset.mode !== "map") return;
       const z = map.getZoom() + (N.wantZoom - map.getZoom()) * 0.05;
       map.setView(N.pos, z, { animate: false });                        // the layer's centre IS the car's spot on screen
       const lf = $("#leaf"); if (lf) lf.style.transform = `rotateX(${TILT}deg) rotate(${-N.heading}deg)`;
     }
-    return { start, stop, fix, localFresh, get on() { return N.on; } };
+    return { start, stop, fix, localFresh, browse, follow, get on() { return N.on; }, get browsing() { return N.browse; } };
   })();
 
   return { show, open, close, geo, nav, prewarm, get isOpen() { return document.body.dataset.mode === "map"; } };

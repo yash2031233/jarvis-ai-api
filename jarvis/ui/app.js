@@ -1035,6 +1035,7 @@ const mapview = createMap({
   },
   onClose() { if (document.body.dataset.mode === "map") delete document.body.dataset.mode; },
 });
+window.jarvis.map = mapview;                     // for poking at the map from the dev console
 $("btnMap").addEventListener("click", () => (mapview.isOpen ? mapview.close() : mapview.open()));
 
 // ------------------------------------------------------------------ dashboard + hand control (from v1)

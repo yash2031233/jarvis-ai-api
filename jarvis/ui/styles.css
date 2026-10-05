@@ -417,6 +417,26 @@ body.navOn.navLand .navSky { height: 28%; }
 body.navOn #mapCard, body.navOn .mapBtns, body.navOn .leaflet-control-zoom, body.navOn #mapClose { display: none !important; }
 body.navOn[data-mode="map"] #transcript, body.navOn[data-mode="map"] #orb { display: none; }
 .navTop, .navBot { display: none; }
+/* navigating, but looking around (drag / pinch / scroll): a flat north-up map with the car on it + Re-center */
+body.navOn.navBrowse #leaf { inset: 0; left: 0; top: 0; width: 100%; height: 100%; transform: none !important; will-change: auto; }
+/* Leaflet's panes have z-index 200-1000: keep them inside the map, under the navigation panels, flat or tilted */
+body.navOn #leaf { isolation: isolate; z-index: 0; }
+body.navOn.navBrowse .navSky, body.navOn.navBrowse .navMe { display: none; }
+body.navOn.navBrowse .leaflet-control-zoom { display: block !important; margin-bottom: 150px; }
+.navRecenter { display: none; }
+/* the tilted map is its own GPU layer; the panels get theirs too, or Chrome can paint the map over them after the
+   view switches between flat and tilted */
+body.navOn .navTop, body.navOn .navBot, body.navOn .navRecenter, body.navOn .navSky { will-change: transform; transform: translateZ(0); }
+body.navOn.navBrowse .navRecenter { transform: translateX(-50%) translateZ(0); }
+body.navOn.navBrowse .navRecenter { display: flex; align-items: center; gap: 8px; position: absolute; z-index: 6; left: 50%;
+  bottom: 160px; transform: translateX(-50%); padding: 11px 18px 11px 14px; border-radius: 999px; cursor: pointer;
+  font: 700 15px/1 var(--sans, system-ui); color: #fff; background: rgba(40, 26, 16, .96); border: 1px solid rgba(255, 178, 107, .6);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .6), 0 0 18px rgba(255, 178, 107, .25); }
+.navRecenter svg { width: 16px; height: 19px; }
+.navRecenter path, .navCar path { fill: var(--accent); stroke: #fff; stroke-width: 3; stroke-linejoin: round; }
+.navCarIcon { background: none; border: 0; }
+.navCar { width: 34px; height: 40px; transition: transform .2s linear; filter: drop-shadow(0 0 6px var(--accent)) drop-shadow(0 2px 2px rgba(0, 0, 0, .7)); }
+.navCar svg { width: 100%; height: 100%; overflow: visible; }
 body.navOn .navTop { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px; position: absolute; z-index: 5;
   top: 52px; left: 10px; right: 10px; padding: 14px 18px; color: #fff;
   background: linear-gradient(180deg, rgba(120, 62, 16, .95), rgba(40, 26, 16, .95)); border: 1px solid rgba(255, 178, 107, .45);
