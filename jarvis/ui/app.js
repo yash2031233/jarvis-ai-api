@@ -768,11 +768,14 @@ const camview = (() => {
       const t = document.createElement("time");
       t.textContent = `${ev.name} · ${new Date(ev.t * 1000).toLocaleTimeString()}`;
       li.append(img, p, t);
-      feed.prepend(li);
-      while (feed.children.length > 30) feed.lastChild.remove();
+      feed.replaceChildren(li);                  // only the latest look - the conversation keeps the story
     },
   };
 })();
+
+// every workspace (3D part, camera, map, dashboard, study) shows the conversation beside it
+new MutationObserver(() => { if (document.body.dataset.mode) convo.prefill(); })
+  .observe(document.body, { attributes: true, attributeFilter: ["data-mode"] });
 
 // ------------------------------------------------------------------ study mode
 const studyview = (() => {

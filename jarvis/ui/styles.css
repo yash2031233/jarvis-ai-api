@@ -513,3 +513,35 @@ body.holoOn #btnHands { color: var(--accent); border-color: var(--line-strong); 
 .holoHover { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 body.remote #btnHands { display: none; }
 body[data-mode] #orb { -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 52%, transparent 71%); mask-image: radial-gradient(circle at 50% 50%, #000 52%, transparent 71%); }
+
+/* ============================================================================================================
+   One layout for every workspace (like 3D design): what Jarvis is doing on the left, the conversation on the
+   right, the orb in the corner. Phones: the work on top, the conversation below.
+   ============================================================================================================ */
+body[data-mode] { --side: 360px; }
+body[data-mode] #convo { display: flex; position: absolute; top: 0; right: 0; bottom: 0; width: var(--side); z-index: 6;
+  flex-direction: column; border-left: 1px solid var(--line); background: rgba(10, 6, 3, .92); }
+body[data-mode="camera"] #camView, body[data-mode="map"] #mapView, body[data-mode="hub"] #hubView,
+body[data-mode="study"] #studyView { right: var(--side); }
+body[data-mode] #reply, body[data-mode] #transcript { display: none; }
+body[data-mode] .activity { right: calc(var(--side) + 14px); top: 52px; }
+body[data-mode="camera"] #orb, body[data-mode="hub"] #orb, body[data-mode="study"] #orb {
+  inset: auto; left: 10px; top: 6px; right: auto; bottom: auto; width: 120px; height: 120px; z-index: 4; }
+body[data-mode="map"] #orb { left: 10px; right: auto; bottom: 84px; top: auto; width: 96px; height: 96px; }
+body[data-mode="hub"] #hubView { padding-left: 140px; }
+/* the camera: the live picture, and only the latest look (replaced each time) */
+.camFeed { top: auto; bottom: 90px; right: 12px; width: min(300px, 42%); overflow: visible; }
+.camFeed li { box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+/* navigating: the map takes the whole screen */
+body.navOn #convo { display: none; }
+body.navOn[data-mode="map"] #mapView { right: 0 !important; }
+@media (max-width: 760px) {
+  body[data-mode="camera"] #camView, body[data-mode="map"] #mapView, body[data-mode="hub"] #hubView,
+  body[data-mode="study"] #studyView { right: 0; bottom: 40%; }
+  body[data-mode] #convo { top: 60%; width: 100%; border-left: 0; border-top: 1px solid var(--line); }
+  body[data-mode] .activity { display: none; }
+  body[data-mode="hub"] #hubView { padding-left: 16px; padding-top: 110px; }
+  body[data-mode="camera"] #orb, body[data-mode="hub"] #orb, body[data-mode="study"] #orb { width: 84px; height: 84px; }
+  body[data-mode="map"] #orb { bottom: calc(40% + 10px); width: 72px; height: 72px; }
+  .camFeed { bottom: calc(40% + 10px); width: 46%; height: auto; }
+}
