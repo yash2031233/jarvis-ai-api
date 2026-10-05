@@ -44,3 +44,17 @@ def test_every_screen_can_be_opened_by_asking():
 def test_message_phone_needs_a_linked_phone():
     r = run("message_phone", text="hi")
     assert not r.ok and "No phone linked" in r.error
+
+
+def test_sleep_schedule_times_and_tonight():
+    import pytest
+
+    from jarvis import power
+
+    assert power._hhmm("6:30") == "06:30" and power._hhmm("22:30") == "22:30"
+    with pytest.raises(power.PowerError):
+        power._hhmm("25:00")
+    power.keep_on_tonight(True)
+    assert power.keep_on_tonight_active()
+    power.keep_on_tonight(False)
+    assert not power.keep_on_tonight_active()

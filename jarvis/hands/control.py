@@ -230,3 +230,32 @@ async def find_devices(setup: bool = True) -> dict:
     if setup:
         found["set_up"] = devices.apply(found) or "nothing new to set up"
     return found
+
+
+@tool(risk="medium", tags=["sleep", "hibernate", "wake up", "wake", "bedtime", "keep it on", "turn off at night",
+                           "schedule", "shut down at night"],
+      examples=["sleep_schedule(action='set', wake='06:30', night='22:30')", "sleep_schedule(action='keep_on_tonight')"])
+async def sleep_schedule(action: str = "status", wake: str = "", night: str = "") -> dict:
+    """The PC's sleep schedule (Windows): it hibernates at night once nobody is using it (from `night`, e.g. 22:30)
+    and wakes itself with Jarvis running at `wake` (e.g. 06:30). action: status; set (give wake and/or night,
+    "off" turns that part off); keep_on_tonight = don't hibernate tonight; allow_tonight = undo that."""
+    import asyncio
+
+    from .. import power
+
+    a = action.strip().lower()
+    try:
+        if a == "keep_on_tonight":
+            power.keep_on_tonight(True)
+            return {"tonight": "the PC stays on"}
+        if a == "allow_tonight":
+            power.keep_on_tonight(False)
+            return {"tonight": "the night hibernate is back on"}
+        if a == "set":
+            cur = await asyncio.to_thread(power.status)
+            w = "" if wake == "off" else (wake or cur.get("wake") or "")
+            n = "" if night == "off" else (night or cur.get("night") or "")
+            return await asyncio.to_thread(power.install, w, n)
+        return await asyncio.to_thread(power.status)
+    except power.PowerError as e:
+        raise ToolError(str(e))

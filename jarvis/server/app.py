@@ -43,6 +43,22 @@ state: dict[str, Any] = {"voice": None, "plugins": [], "started": time.time()}
 metrics: dict[str, list[int]] = defaultdict(list)
 
 
+async def _busy_writer() -> None:
+    """busy.json for the night hibernate check (a separate process): never hibernate mid-reply or mid-job."""
+    import json as _json
+
+    from ..agent import jobs
+
+    f = config.DATA_DIR / "busy.json"
+    while True:
+        try:
+            busy = agent.busy.locked() or any(j.get("status") in ("queued", "running") for j in jobs.all_jobs())
+            f.write_text(_json.dumps({"busy": busy, "t": time.time()}), "utf-8")
+        except Exception:
+            pass
+        await asyncio.sleep(30)
+
+
 async def _metrics_collector() -> None:
     q = bus.subscribe()
     while True:
@@ -97,6 +113,7 @@ async def lifespan(app: FastAPI):
     from .. import push
 
     push_task = asyncio.create_task(push.loop())
+    busy_task = asyncio.create_task(_busy_writer())
     start_voice()
     log.info("Jarvis %s ready - %d tools, plugins: %s", __version__, len(registry.tools), state["plugins"])
     yield
@@ -104,6 +121,7 @@ async def lifespan(app: FastAPI):
     keeper_task.cancel()
     proactive_task.cancel()
     push_task.cancel()
+    busy_task.cancel()
     if state["voice"]:
         state["voice"].shutdown()
 
@@ -234,6 +252,33 @@ async def secrets_set(body: dict[str, Any]):
         if n in DEVICE_SECRETS and isinstance(v, str) and v.strip():
             config.set_secret(n, v.strip())
     return {n: bool(config.get_secret(n)) for n in DEVICE_SECRETS}
+
+
+@app.get("/api/power")
+async def power_status():
+    from .. import power
+
+    try:
+        return await asyncio.to_thread(power.status)
+    except power.PowerError as e:
+        return {"supported": True, "error": str(e)}
+
+
+@app.post("/api/power")
+async def power_set(body: dict[str, Any]):
+    """wake / night: "HH:MM" (empty = off) · keep_on_tonight: true/false"""
+    from .. import power
+
+    try:
+        if "keep_on_tonight" in body:
+            power.keep_on_tonight(bool(body["keep_on_tonight"]))
+        if "wake" in body or "night" in body:
+            cur = await asyncio.to_thread(power.status)
+            return await asyncio.to_thread(power.install, body.get("wake", cur.get("wake") or ""),
+                                           body.get("night", cur.get("night") or ""))
+        return await asyncio.to_thread(power.status)
+    except power.PowerError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/push")

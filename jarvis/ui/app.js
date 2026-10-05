@@ -421,7 +421,8 @@ function fillSettings(data) {
   $("sName").value = s.user_name;
   $("sProactive").checked = s.proactive;
   $("sNavVoice").checked = s.nav_voice;
-  loadDevicesPanel(); $("sNavUnits").value = s.nav_units || "imperial";
+  loadDevicesPanel();
+  loadPower(); $("sNavUnits").value = s.nav_units || "imperial";
   loadLocation();
   $("sHeartbeat").value = String(s.heartbeat_min || 0);
   $("sQuietStart").value = s.quiet_start; $("sQuietEnd").value = s.quiet_end;
@@ -964,6 +965,21 @@ $("btnPrinterSave").addEventListener("click", async () => {
   await api("/api/secrets", { method: "POST", body: { printer_serial: $("sPrinterSerial").value, printer_code: $("sPrinterCode").value } });
   $("sPrinterSerial").value = ""; $("sPrinterCode").value = ""; toast("Printer keys saved ✓"); loadDevicesPanel();
 });
+async function loadPower() {
+  try {
+    const p = await api("/api/power");
+    if (p.supported === false) { $("pwStatus").textContent = "Windows only"; return; }
+    $("pwWake").value = p.wake || ""; $("pwNight").value = p.night || "";
+    $("pwStatus").textContent = (p.wake || p.night ? `On · wakes ${p.wake || "–"} · hibernates from ${p.night || "–"}` : "Off")
+      + (p.keep_on_tonight ? " · staying on tonight" : "");
+  } catch { /* optional */ }
+}
+$("btnPowerSave").addEventListener("click", async () => {
+  try { await api("/api/power", { method: "POST", body: { wake: $("pwWake").value, night: $("pwNight").value } }); toast("Sleep schedule saved ✓"); }
+  catch (e) { toast(e.message, "error"); }
+  loadPower();
+});
+$("btnKeepOn").addEventListener("click", async () => { await api("/api/power", { method: "POST", body: { keep_on_tonight: true } }); toast("The PC stays on tonight."); loadPower(); });
 $("btnFindDevices").addEventListener("click", async () => {
   $("devStatus").textContent = "Looking…"; $("devList").replaceChildren();
   try {

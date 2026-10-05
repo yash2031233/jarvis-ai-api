@@ -311,6 +311,17 @@
       </section>
 
       <section>
+        <h3>Sleep schedule</h3>
+        <p class="muted small">The PC hibernates at night once nobody's used it for 10 minutes (with a 2-minute warning
+          on your phone), and wakes itself with Jarvis running in the morning. Empty = off. Windows only.</p>
+        <div class="row"><label>Wake up <input id="pwWake" type="time"></label>
+          <label>Hibernate from <input id="pwNight" type="time"></label>
+          <button id="btnPowerSave" class="btn subtle" type="button">Save</button></div>
+        <div class="row"><button id="btnKeepOn" class="btn subtle" type="button">Keep it on tonight</button>
+          <span id="pwStatus" class="muted small"></span></div>
+      </section>
+
+      <section>
         <h3>Devices</h3>
         <p class="muted small">Printers, the robot car, cameras, microphones and speakers - found and checked
           automatically. Run it again after plugging something in or switching it on.</p>
