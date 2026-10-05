@@ -38,8 +38,25 @@ def _replace_running() -> None:
     try:
         import psutil
 
-        old = int(pidf.read_text().strip())
-        if old != os.getpid() and psutil.pid_exists(old):
+        olds: set[int] = set()
+        try:
+            olds.add(int(pidf.read_text().strip()))
+        except (OSError, ValueError):
+            pass
+        # plus any other copy started from this same install (two quick starts could leave one running that the pid
+        # file no longer names - it kept the mic and talked over the new one)
+        me = os.getpid()
+        family = {me, os.getppid()}
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                cmd = " ".join(proc.info["cmdline"] or []).lower()
+                if proc.info["pid"] not in family and cmd.rstrip().endswith("-m jarvis")                         and not os.environ.get("JARVIS_DATA_DIR"):
+                    olds.add(proc.info["pid"])
+            except (psutil.Error, TypeError):
+                continue
+        for old in olds - family:
+            if not psutil.pid_exists(old):
+                continue
             proc = psutil.Process(old)
             if "jarvis" in " ".join(proc.cmdline()).lower():
                 proc.terminate()
