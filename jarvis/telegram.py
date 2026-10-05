@@ -51,14 +51,44 @@ def _call(method: str, **params) -> dict:
     return j["result"]
 
 
-def send(text: str) -> bool:
-    """Message the paired chat. Best effort - False when there's no bot or no paired chat."""
+def _send_file(cid: int, ref: str, caption: str = "") -> bool:
+    """One MEDIA reference -> a Telegram photo / video / document."""
+    from . import media
+
+    p = media.resolve(ref)
+    if p is None:
+        return False
+    k = media.kind(p)
+    method, field = {"image": ("sendPhoto", "photo"), "video": ("sendVideo", "video")}.get(k, ("sendDocument", "document"))
+    try:
+        r = httpx.post(API.format(token=token(), method=method), data={"chat_id": cid, "caption": caption[:1000]},
+                       files={field: (p.name, p.read_bytes())}, timeout=120)
+        if not r.json().get("ok") and method == "sendPhoto":    # odd sizes are refused as photos: send as a file
+            r = httpx.post(API.format(token=token(), method="sendDocument"), data={"chat_id": cid, "caption": caption[:1000]},
+                           files={"document": (p.name, p.read_bytes())}, timeout=120)
+        return bool(r.json().get("ok"))
+    except Exception as e:
+        log.warning("telegram file failed: %s", e)
+        return False
+
+
+def send(text: str, media_refs: list[str] | None = None) -> bool:
+    """Message the paired chat, with any MEDIA tags in the text (or media_refs) attached as real photos / files.
+    Best effort - False when there's no bot or no paired chat."""
+    from . import media
+
     cid = chat_id()
     if not (cid and token()):
         return False
+    clean, refs = media.split(text)
+    refs += [r for r in (media_refs or []) if r not in refs]
     try:
-        for i in range(0, len(text), 4000):
-            _call("sendMessage", chat_id=cid, text=text[i:i + 4000])
+        if len(refs) == 1 and len(clean) <= 1000 and _send_file(cid, refs[0], clean):
+            return True                                   # one picture: the text goes with it as the caption
+        for i in range(0, len(clean), 4000):
+            _call("sendMessage", chat_id=cid, text=clean[i:i + 4000])
+        for r in refs:
+            _send_file(cid, r)
         return True
     except Exception as e:
         log.warning("telegram send failed: %s", e)
@@ -137,7 +167,13 @@ async def _handle(upd: dict[str, Any], client: httpx.AsyncClient, tok: str) -> N
 
         await client.post(API.format(token=tok, method="sendChatAction"), json={"chat_id": cid, "action": "typing"})
         answer = await agent.handle(text, source="telegram")
-        await reply(answer or "Done.")
+        from . import media
+
+        clean, refs = media.split(answer or "")
+        if refs:
+            await asyncio.to_thread(send, answer)          # with its pictures / files attached
+        else:
+            await reply(clean or "Done.")
 
 
 async def _loop() -> None:

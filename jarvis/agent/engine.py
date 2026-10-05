@@ -51,6 +51,9 @@ RULES = """\
   confirmation — that is handled for you; if declined, don't retry it.
 - Replies are spoken aloud: be brief and natural (1-3 sentences), no markdown tables,
   no URLs read out, unless the user asks for detail. Use plain text.
+- To show or send a picture, video or file (a snapshot, screenshot, diagram, 3D preview, recording, a file the
+  user asked for), put MEDIA:<path or url from a tool result> on its own line in your reply - on Telegram it
+  arrives as the real photo/file, in the app it shows inline. Never invent a path.
 """
 
 
@@ -90,6 +93,7 @@ class SentenceSplitter:
         self.buf = ""
 
     def _out(self, s: str) -> None:
+        s = re.sub(r"MEDIA:\s*\S+", " ", s)            # attachments are shown / sent, never read out
         s = re.sub(r"```.*?```", " ", s, flags=re.S)
         s = re.sub(r"[*_#`>|]", "", s)
         s = re.sub(r"https?://\S+", "the link", s).strip()

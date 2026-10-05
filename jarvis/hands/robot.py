@@ -191,6 +191,48 @@ Decide the single next move. Reply with JSON only:
   "why": "<one short reason>"}}"""
 
 
+DESCRIBE_Q = ("You are the eyes of a small robot car; its camera is ~10 cm off the floor. Describe the view for the "
+              "driver, who can't see it: every object / person / pet / obstacle / doorway / open floor, each with where it "
+              "is (far left, left, center, right, far right) and how far (touching, near <50 cm, mid ~1 m, far). Say "
+              "whether the path straight ahead is clear. Short lines, no guessing.")
+
+DRIVE_PROMPT = """You are driving a small robot car. You can't see; your eyes report what the camera shows.
+Goal: {goal}
+Sonar: {sonar}. Step {step} of {steps}.
+Eyes report:
+{view}
+What happened so far:
+{history}
+
+Decide the single next move. Reply with JSON only:
+{{"see": "<what matters in this view, one sentence>", "done": <true if the goal is achieved or clearly impossible>,
+  "move": "forward|back|left|right|veer_left|veer_right", "seconds": <0.2-2.0; turning 0.45 s is about a quarter turn>,
+  "why": "<one short reason>"}}"""
+
+
+async def _decide(img: np.ndarray, goal: str, sonar: str, step: int, steps: int, history: list[str]) -> str:
+    """Who steers each step. The main model (GLM...) plans - it picks the goal and reads the whole trip afterwards.
+    Step by step: robot_driver=vision (default) lets the fast vision model look and steer in one call (~3 s);
+    robot_driver=main has the vision model describe the view and the main model decide from that - smarter but
+    slower, and if the main model takes too long the vision model's own call is used for that step."""
+    from ..brain.client import brain
+    from ..vision import see
+
+    hist = "\n".join(history[-6:]) or "(nothing yet)"
+    direct = EXPLORE_PROMPT.format(goal=goal, sonar=sonar, step=step, steps=steps, history=hist)
+    s = config.store.load()
+    cands = await see.candidates()
+    if s.robot_driver != "main" or (cands and cands[0] == s.model):
+        return await _see(img, direct, 260)
+    view = await _see(img, DESCRIBE_Q, 300)
+    try:
+        text, _ = await asyncio.wait_for(brain.complete([{"role": "user", "content": DRIVE_PROMPT.format(
+            goal=goal, sonar=sonar, step=step, steps=steps, view=view, history=hist)}], max_tokens=1500, temperature=0.2), 30)
+        return text
+    except Exception:
+        return await _see(img, direct, 260)
+
+
 @tool(risk="low", timeout=600,
       tags=["robot", "car", "drive", "robot car", "explore", "go find", "move forward", "turn around", "the car"],
       examples=["robot(action='look')", "robot(action='drive', move='forward', seconds=1)",
@@ -301,8 +343,7 @@ async def _robot(a, question, head, move, seconds, degrees, plan, speed, goal, s
                 d = st.get("distance_cm", -1)
                 sonar = f"{d:.0f} cm to the nearest thing ahead" if d and d > 0 else "clear for at least 3 m"
                 img = await run(_frame)
-                raw = await _see(img, EXPLORE_PROMPT.format(goal=goal, sonar=sonar, step=step, steps=steps,
-                                                            history="\n".join(history[-6:]) or "(nothing yet)"), 260)
+                raw = await _decide(img, goal, sonar, step, steps, history)
                 m = re.search(r"\{.*\}", raw, re.S)
                 try:
                     p = json.loads(m.group(0)) if m else {}
@@ -326,7 +367,8 @@ async def _robot(a, question, head, move, seconds, degrees, plan, speed, goal, s
                 await run(_call, "/stop", 2)
             except Exception:
                 pass
-        return {"goal": goal, "steps_taken": len(story), "finished": bool(story and story[-1].get("result")), "story": story}
+        return {"goal": goal, "steps_taken": len(story), "finished": bool(story and story[-1].get("result")), "story": story,
+                "next": "read the story: if the goal isn't reached, decide a better goal or plan and explore again"}
     if a == "watch":
         t0 = last_new = time.time()
         prev, events = None, []

@@ -62,6 +62,7 @@ class Settings(BaseModel):
     base_url: str = PROVIDER_PRESETS["nvidia"]["base_url"]
     model: str = ""
     temperature: float = 0.4
+    vision_model: str = ""          # for looking at images (car, cameras, screen); "" = auto: the main model if it can see, else one from the same provider
     max_tokens: int = 2048
     personality: str = (
         "You are J.A.R.V.I.S., a calm, precise and slightly dry-witted desktop assistant. "
@@ -94,6 +95,7 @@ class Settings(BaseModel):
     robot_pan_left_high: bool = True # head servo direction: a bigger angle turns the head left
     robot_tilt_ok: bool = True       # False if the head's up/down servo is broken
     robot_turn_deg_per_s: float = 200.0
+    robot_driver: str = "vision"     # who steers step by step: vision (fast vision model) | main (the main model, via the vision model's eyes - smarter, slower)
     cad_review: bool = True          # vision self-check of each design (needs a vision-capable model)
 
     # Cameras: [{"id", "name", "kind": "device"|"ip", "device": int, "url_display": str}]

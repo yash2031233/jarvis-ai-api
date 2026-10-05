@@ -66,7 +66,7 @@ export function createPhone({ api, token, orb, toast, onText }) {
   }
   // Sentences are fetched ahead (so there's no gap between them) but played strictly in order.
   function say(text, { urgent = false } = {}) {
-    text = String(text || "").replace(/```[\s\S]*?```/g, " ").replace(/[*_#`>|]/g, "").replace(/https?:\/\/\S+/g, "the link").trim();
+    text = String(text || "").replace(/MEDIA:\s*\S+/g, " ").replace(/```[\s\S]*?```/g, " ").replace(/[*_#`>|]/g, "").replace(/https?:\/\/\S+/g, "the link").trim();
     if (!text) return;
     if (urgent) stop();
     const my = gen;

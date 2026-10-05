@@ -755,6 +755,18 @@ async def camera_snap(name: str):
 
 
 # ---------------------------------------------------------------------------- media (diagrams, pictures in chat)
+@app.get("/api/file")
+async def media_ref(ref: str):
+    """What a MEDIA:<ref> tag in a reply points at (a snapshot, screenshot, diagram, recording, file)."""
+    from .. import media
+
+    p = media.resolve(ref)
+    if p is None:
+        raise HTTPException(404, "no such file")
+    inline = media.kind(p) in ("image", "video")
+    return FileResponse(p, filename=None if inline else p.name, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/media/{name}")
 async def media_file(name: str):
     root = config.DATA_DIR / "media"

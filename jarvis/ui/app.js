@@ -40,6 +40,14 @@ function renderMd(s) {
       html += escapeHtml(parts[i])
         .replace(/!\[([^\]]*)\]\((\/api\/(?:media|camera\/snap)\/[\w.\-]+)\)/g,
           (m, alt, url) => `<img class="md-img" src="${url}?token=${encodeURIComponent(TOKEN)}" alt="${alt}">`)
+        // MEDIA:<path or url> - what Jarvis attached: pictures / videos inline, other files as a link
+        .replace(/MEDIA:\s*(&quot;[^&]+&quot;|\S+)/g, (m, ref) => {
+          const r = ref.replace(/^&quot;|&quot;$/g, "").replace(/&amp;/g, "&");
+          const src = `/api/file?ref=${encodeURIComponent(r)}&token=${encodeURIComponent(TOKEN)}`;
+          if (/\.(jpe?g|png|gif|webp)(\?|$)/i.test(r)) return `<img class="md-img" src="${src}" alt="">`;
+          if (/\.(mp4|webm|mov)(\?|$)/i.test(r)) return `<video class="md-img" src="${src}" controls playsinline></video>`;
+          return `<a href="${src}" target="_blank">📎 ${escapeHtml(r.split(/[\\/]/).pop())}</a>`;
+        })
         .replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
         .replace(/\n/g, "<br>");
     } else if (i % 3 === 2) html += `<pre><code>${escapeHtml(parts[i])}</code></pre>`;
@@ -495,7 +503,13 @@ function renderModels() {
   sel.replaceChildren(...list.map((m) => new Option(m, m)));
   if (settings.model && !list.includes(settings.model)) sel.prepend(new Option(settings.model, settings.model));
   sel.value = settings.model || list[0] || "";
+  const vis = allModels.filter((m) => /vl|vision|omni|llava|vila|gemma-3|pixtral|kimi-k3|kimi-k2\.6/i.test(m) && !/embed/i.test(m));
+  const vs = $("sVisionModel");
+  vs.replaceChildren(new Option("Automatic (best available)", ""), ...vis.map((m) => new Option(m, m)));
+  if (settings.vision_model && !vis.includes(settings.vision_model)) vs.append(new Option(settings.vision_model, settings.vision_model));
+  vs.value = settings.vision_model || "";
 }
+$("sVisionModel").onchange = () => save({ vision_model: $("sVisionModel").value });
 $("sModelFilter").oninput = renderModels;
 $("btnLoadModels").onclick = () => loadModels(false);
 $("sModel").onchange = async () => { await save({ model: $("sModel").value }); $("modelResult").textContent = ""; testModel(); };

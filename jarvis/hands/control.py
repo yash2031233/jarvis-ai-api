@@ -17,6 +17,7 @@ SETTABLE: dict[str, str] = {
     "personality": "Jarvis's personality / how he talks",
     "provider": "model provider: nvidia | lmstudio | ollama | custom",
     "model": "the model id to use",
+    "vision_model": "model used for images - car driving, cameras, screen (empty = automatic)",
     "temperature": "0-1, higher = more creative",
     "voice_enabled": "voice on/off (listening + speaking)",
     "tts_voice": "speaking voice id (see `voices`)",
@@ -43,6 +44,7 @@ SETTABLE: dict[str, str] = {
     "robot_host": "robot car address (empty = find it)",
     "robot_tilt_ok": "false if the car's head up/down servo is broken",
     "robot_pan_left_high": "car head direction: true if a bigger servo angle turns the head left",
+    "robot_driver": "who steers the car step by step: vision (fast) | main (the main model - smarter, slower)",
     "robot_turn_deg_per_s": "how fast the car turns (degrees per second) - tune if turns over/undershoot",
     "auto_webcam": "use the first webcam without setting it up",
     "nav_voice": "speak turn-by-turn directions",
@@ -169,13 +171,15 @@ def camera_setup(action: str = "list", name: str = "", kind: str = "device", dev
 
 @tool(risk="medium", tags=["text me", "message me", "send to my phone", "telegram", "phone", "remind me on my phone"],
       examples=["message_phone(text='Empire State Building: 350 5th Ave, New York')"])
-def message_phone(text: str) -> dict:
-    """Send `text` to the user's phone through their paired Jarvis Telegram bot (Settings → Location)."""
+def message_phone(text: str, media: str = "") -> dict:
+    """Send `text` to the user's phone through their paired Jarvis Telegram bot (Settings → Location).
+    `media`: pictures / videos / files to attach - paths or urls from tool results, comma-separated
+    (MEDIA:<path> lines inside `text` work too)."""
     from .. import telegram
 
     if not telegram.chat_id() or not telegram.token():
         raise ToolError("No phone linked.", hint="Settings → Location: add a Telegram bot and pair it.")
-    if not telegram.send(text):
+    if not telegram.send(text, [m.strip() for m in media.split(",") if m.strip()]):
         raise ToolError("Telegram didn't accept the message.")
     return {"sent": True}
 

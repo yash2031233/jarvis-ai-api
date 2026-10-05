@@ -289,7 +289,7 @@ class Brain:
 
     # ------------------------------------------------------------- one-shot completion
     async def complete(self, messages: list[dict[str, Any]], max_tokens: int = 4000, temperature: float = 0.2,
-                       think: bool = False) -> tuple[str, str | None]:
+                       think: bool = False, model: str | None = None) -> tuple[str, str | None]:
         """Non-streaming call for internal jobs (e.g. writing OpenSCAD). Returns (text, finish_reason).
 
         On local servers thinking is switched off unless asked for: v1 measured a 36-line part at
@@ -302,7 +302,7 @@ class Brain:
         for attempt in range(4):
             try:
                 r = await self.client().chat.completions.create(
-                    model=self.model(), messages=messages, max_tokens=max_tokens, temperature=temperature,
+                    model=model or self.model(), messages=messages, max_tokens=max_tokens, temperature=temperature,
                     extra_body=extra or None,
                 )
                 ch = r.choices[0]

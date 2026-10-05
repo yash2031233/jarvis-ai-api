@@ -233,6 +233,9 @@
           </div>
         </label>
         <input id="sModelFilter" type="search" placeholder="Filter models…" aria-label="Filter models">
+        <label>Vision model <span class="muted small">(for seeing: robot car, cameras, screen - used when the main model can't see)</span>
+          <select id="sVisionModel"><option value="">Automatic</option></select>
+        </label>
         <div class="row">
           <button id="btnTestModel" class="btn subtle">Test tool calling</button>
           <span id="modelResult" class="muted"></span>
