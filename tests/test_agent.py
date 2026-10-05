@@ -18,7 +18,7 @@ class FakeBrain:
         self.turns = list(turns)
         self.seen = []
 
-    async def stream_turn(self, messages, tools=None, on_text=None, on_tool_call=None, cancel=None, no_think=False):
+    async def stream_turn(self, messages, tools=None, on_text=None, on_tool_call=None, cancel=None):
         self.seen.append(messages)
         t = self.turns.pop(0)
         if t.text and on_text:

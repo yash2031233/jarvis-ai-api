@@ -266,7 +266,7 @@ class Agent:
                 await asyncio.sleep(min(4.0, 1.0 * empty_turns))
             result = await brain.stream_turn(
                 msgs, registry.schemas(tool_names), on_text=on_text, on_tool_call=on_tool_call,
-                cancel=self.cancel_event, no_think=empty_turns > 0,
+                cancel=self.cancel_event,
             )
             if result.finish_reason == "cancelled":
                 for tsk in early.values():

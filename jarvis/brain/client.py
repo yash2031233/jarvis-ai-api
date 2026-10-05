@@ -131,7 +131,6 @@ class Brain:
         on_text: Any = None,
         on_tool_call: Any = None,
         cancel: asyncio.Event | None = None,
-        no_think: bool = False,
     ) -> TurnResult:
         """One model turn. Streams text through on_text(delta).
 
@@ -147,10 +146,6 @@ class Brain:
 
         req_messages = messages
         kwargs: dict[str, Any] = {}
-        if no_think:
-            # a retry after a broken turn: answer without the thinking phase (where the breakage happens)
-            kwargs["extra_body"] = {"chat_template_kwargs": {"thinking": False, "enable_thinking": False},
-                                    "reasoning_effort": "none"} if s.provider in ("lmstudio", "ollama") else                 {"chat_template_kwargs": {"thinking": False, "enable_thinking": False}}
         if tools and native:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
@@ -163,9 +158,6 @@ class Brain:
                     model, req_messages, kwargs, known, s, on_text, on_tool_call, cancel
                 )
             except BrainError as e:
-                if "extra_body" in kwargs and e.kind in ("error", "tools_unsupported") and "400" in str(e):
-                    kwargs.pop("extra_body")          # this server doesn't take the no-thinking switch
-                    continue
                 if e.kind == "tools_unsupported" and native and tools:
                     log.info("model %s rejected native tools; switching to text tool calling", model)
                     self.native_tools[model] = False
@@ -292,18 +284,12 @@ class Brain:
                        think: bool = False, model: str | None = None) -> tuple[str, str | None]:
         """Non-streaming call for internal jobs (e.g. writing OpenSCAD). Returns (text, finish_reason).
 
-        On local servers thinking is switched off unless asked for: v1 measured a 36-line part at
-        203 s with thinking on (and it still didn't compile) vs seconds with it off.
+        The model runs as it's configured - its reasoning is never switched off or turned down here.
         """
-        s = config.store.load()
-        extra: dict[str, Any] = {}
-        if not think and s.provider in ("lmstudio", "ollama"):
-            extra["reasoning_effort"] = "none"
         for attempt in range(4):
             try:
                 r = await self.client().chat.completions.create(
                     model=model or self.model(), messages=messages, max_tokens=max_tokens, temperature=temperature,
-                    extra_body=extra or None,
                 )
                 ch = r.choices[0]
                 text = re.sub(r"<think>.*?</think>", "", ch.message.content or "", flags=re.S).strip()
