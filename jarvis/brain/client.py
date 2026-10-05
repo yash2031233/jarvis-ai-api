@@ -290,6 +290,7 @@ class Brain:
             try:
                 r = await self.client().chat.completions.create(
                     model=model or self.model(), messages=messages, max_tokens=max_tokens, temperature=temperature,
+                    timeout=300,          # a whole answer at once (3D designs, diary...): slow thinking models need minutes
                 )
                 ch = r.choices[0]
                 text = re.sub(r"<think>.*?</think>", "", ch.message.content or "", flags=re.S).strip()
