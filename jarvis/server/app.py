@@ -242,7 +242,7 @@ def _decode_audio(data: bytes):
     return (np.concatenate(out).astype(np.float32) / 32768.0) if out else np.zeros(0, np.float32)
 
 
-DEVICE_SECRETS = ("printer_serial", "printer_code", "printer_api_key", "robot_token")
+DEVICE_SECRETS = ("printer_serial", "printer_code", "printer_api_key", "robot_token", "brave_search_key")
 
 
 @app.get("/api/secrets")

@@ -234,6 +234,9 @@
           </div>
         </label>
         <input id="sModelFilter" type="search" placeholder="Filter models…" aria-label="Filter models">
+        <label>Backup model <span class="muted small">(answers when the main model's servers are overloaded)</span>
+          <select id="sFallbackModel"><option value="">None</option></select>
+        </label>
         <label>Vision model <span class="muted small">(for seeing: robot car, cameras, screen - used when the main model can't see)</span>
           <select id="sVisionModel"><option value="">Automatic</option></select>
         </label>
@@ -344,6 +347,17 @@
             <input id="sPrinterCode" type="password" autocomplete="off" placeholder="check code">
             <button id="btnPrinterSave" class="btn subtle" type="button">Save</button></div>
         </label>
+      </section>
+
+      <section>
+        <h3>Web search</h3>
+        <p class="muted small">Works with no setup (Bing, then DuckDuckGo). For the most reliable results add a free
+          Brave Search API key (api-dashboard.search.brave.com) or the address of your own SearXNG server.</p>
+        <label>Brave Search key
+          <div class="row"><input id="sBraveKey" type="password" autocomplete="off" placeholder="optional">
+            <button id="btnBraveSave" class="btn subtle" type="button">Save</button></div>
+        </label>
+        <label>SearXNG address <input id="sSearx" type="text" spellcheck="false" placeholder="optional, e.g. http://localhost:8888"></label>
       </section>
 
       <section>

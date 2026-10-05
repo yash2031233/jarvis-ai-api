@@ -125,3 +125,26 @@ def test_empty_turns_never_give_a_silent_reply(agent, monkeypatch):
     last = memory.history(1)[0]
     assert last["role"] == "assistant" and last["meta"]["tools"][0]["name"] == "calculate"
     assert last["meta"]["tools"][0]["ok"] is True
+
+
+def test_backup_model_takes_over_when_the_main_one_is_overloaded(monkeypatch):
+    from jarvis import config
+    from jarvis.brain.client import Brain, BrainError
+
+    b = Brain()
+    used = []
+
+    async def once(model, *a, **k):
+        used.append(model)
+        if model == "main":
+            raise BrainError("Provider error 503.", "server")
+        return TurnResult(text="from backup")
+
+    monkeypatch.setattr(b, "_stream_once", once)
+    monkeypatch.setattr(b, "client", lambda: None)
+    config.store.update(model="main", fallback_model="backup")
+    try:
+        r = asyncio.run(b.stream_turn([{"role": "user", "content": "hi"}]))
+    finally:
+        config.store.update(fallback_model="")
+    assert r.text == "from backup" and used == ["main", "backup"]

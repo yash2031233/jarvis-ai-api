@@ -63,23 +63,64 @@ def _window_rect(title: str) -> tuple[int, int, int, int] | None:
 
 
 def grab(window: str = "") -> tuple[np.ndarray, int, int]:
-    """Screenshot (BGR) of the whole desktop or one window, plus its top-left in screen coordinates."""
+    """Screenshot (BGR) of the whole desktop or one window, plus its top-left in screen coordinates.
+    A window is found by app name / alias / title ("chrome", "claude", "terminal") and captured even when it's behind
+    other windows (or minimized)."""
+    if window:
+        from ..vision import windows
+
+        w = windows.find(window)
+        if w is None:
+            open_ = ", ".join(sorted({f"{x.app} ('{x.title[:40]}')" for x in windows.list_windows()})[:15])
+            raise ToolError(f"No open window matching '{window}'.", hint=f"Open windows: {open_ or 'none'}")
+        img = windows.capture(w)
+        if img is not None:
+            return img, w.rect[0], w.rect[1]
+        rect = w.rect                                     # the app can't draw itself off-screen: grab its screen area
     try:
         import mss
     except ImportError:
         raise ToolError("Screen capture needs mss: pip install mss")
     with getattr(mss, "MSS", None)() if hasattr(mss, "MSS") else mss.mss() as m:
         if window:
-            rect = _window_rect(window)
-            if rect is None:
-                raise ToolError(f"No open window matching '{window}'.", hint="Use list_running_apps or omit window.")
-            left, top, w, h = rect
-            mon = {"left": left, "top": top, "width": max(1, w), "height": max(1, h)}
+            left, top, w_, h_ = rect
+            mon = {"left": left, "top": top, "width": max(1, w_), "height": max(1, h_)}
         else:
             mon = m.monitors[0]  # all monitors
         shot = m.grab(mon)
     img = np.asarray(shot)[:, :, :3].copy()  # BGRA -> BGR
     return img, int(mon["left"]), int(mon["top"])
+
+
+def focus(window: str) -> None:
+    """Bring a window to the front (before clicking or typing into it)."""
+    if not window or sys.platform != "win32":
+        return
+    import ctypes
+
+    from ..vision import windows
+
+    w = windows.find(window)
+    if w is None:
+        raise ToolError(f"No open window matching '{window}'.", hint="list_windows shows what's open.")
+    u = ctypes.windll.user32
+    if w.minimized:
+        u.ShowWindow(w.hwnd, 9)                           # SW_RESTORE
+    u.keybd_event(0x12, 0, 0, 0)                          # a tap of Alt lets this process take the foreground
+    u.SetForegroundWindow(w.hwnd)
+    u.keybd_event(0x12, 0, 2, 0)
+    time.sleep(0.25)
+
+
+@tool(risk="low", readonly=True, tags=["windows", "open windows", "what's open", "apps open", "which window", "is it open"],
+      examples=["list_windows()"])
+def list_windows() -> dict:
+    """Every open window on this PC: its app and title (the title often says what it's showing - the page, the file,
+    the conversation), whether it's minimized, which is in front. Use the app or title with read_screen /
+    look_at_screen (window=...) to read a window even when it's behind others."""
+    from ..vision import windows
+
+    return {"windows": [w.info() for w in windows.list_windows()]}
 
 
 def _lines(window: str = "") -> tuple[list[dict[str, Any]], int, int]:
@@ -93,8 +134,9 @@ def _lines(window: str = "") -> tuple[list[dict[str, Any]], int, int]:
 @tool(risk="low", tags=["screen", "read", "what's on my screen", "ocr", "text", "window"],
       examples=["read_screen()", "read_screen(window='Chrome')"])
 def read_screen(window: str = "", max_chars: int = 6000) -> dict:
-    """Read all text on the screen (or in one window by title) with OCR in about a second - no vision model.
-    Use this FIRST for 'what's on my screen', reading an error, a page, a dialog."""
+    """Read all text on the screen, or in one app's window (`window`: 'chrome', 'claude', 'terminal', 'spotify' or
+    part of its title - it works even when that window is behind others or minimized) with OCR, ~1 s, no vision
+    model. Use this FIRST for 'what's on my screen', 'is X done in that app', reading an error, a page, a dialog."""
     t0 = time.time()
     lines, _, _ = _lines(window)
     text = ocr.text_of(lines)
@@ -124,7 +166,10 @@ def _mouse():
       examples=["click_text(text='Sign in')", "click_text(text='Save', window='Notepad')"])
 def click_text(text: str, window: str = "", button: str = "left", double: bool = False) -> dict:
     """Find text on screen with OCR and click it (a button label, menu item, link, list row).
-    Much faster than a vision round-trip. button: left|right."""
+    Much faster than a vision round-trip. button: left|right. With `window`, that window is brought to the front
+    first (so the click can't land on something covering it)."""
+    if window:
+        focus(window)
     lines, ox, oy = _lines(window)
     hits = ocr.find(lines, text)
     if not hits:
@@ -136,6 +181,25 @@ def click_text(text: str, window: str = "", button: str = "left", double: bool =
     time.sleep(0.05)
     mouse.click(Button.right if button == "right" else Button.left, 2 if double else 1)
     return {"clicked": h["text"], "x": x, "y": y}
+
+
+@tool(risk="low", readonly=True, timeout=60, tags=["wait", "until", "loaded", "ready", "appears", "load"],
+      examples=["wait_for_text(text='Untitled document', window='chrome')", "wait_for_text(text='Download complete')"])
+def wait_for_text(text: str, window: str = "", seconds: int = 20) -> dict:
+    """Wait until `text` shows up on the screen (or in one window) - a page finished loading, a dialog opened, a
+    download finished. Use before typing into or clicking something that's still loading."""
+    end = time.time() + max(1, min(int(seconds), 120))
+    while True:
+        try:
+            lines, _, _ = _lines(window)
+            hits = ocr.find(lines, text)
+            if hits:
+                return {"found": hits[0]["text"], "after_s": round(max(1, min(int(seconds), 120)) - (end - time.time()), 1)}
+        except ToolError:
+            pass                                          # the window may not exist yet
+        if time.time() > end:
+            raise ToolError(f"'{text}' didn't appear within {seconds}s.", hint="read_screen to see what's there now.")
+        time.sleep(0.7)
 
 
 @tool(risk="medium", tags=["click", "coordinates", "mouse"])
@@ -151,16 +215,14 @@ def click_at(x: int, y: int, button: str = "left", double: bool = False) -> str:
 @tool(risk="medium", tags=["type", "write", "enter text", "keyboard", "fill"],
       examples=["type_text(text='hello world', press_enter=true)"])
 def type_text(text: str, press_enter: bool = False, window: str = "") -> str:
-    """Type text into the focused window (optionally focus a window by title first)."""
+    """Type text into the focused window (`window`: bring that app/window to the front first). Into a web page or app
+    that's still loading, wait_for_text first - typing before it's ready goes nowhere."""
     try:
         from pynput.keyboard import Controller, Key
     except ImportError:
         raise ToolError("Typing needs pynput: pip install pynput")
     if window:
-        from .apps import focus_app
-
-        focus_app(window)
-        time.sleep(0.25)
+        focus(window)
     kb = Controller()
     kb.type(text)
     if press_enter:
@@ -226,8 +288,8 @@ def screenshot(window: str = "") -> dict:
 
 @tool(risk="low", timeout=120, tags=["look", "screen", "see", "picture", "chart", "image", "what does it look like"])
 async def look_at_screen(question: str = "", window: str = "") -> dict:
-    """Look at the screen with the vision model - for pictures, charts and layout that text can't capture.
-    For text, read_screen is much faster."""
+    """Look at the screen (or one app's window, even behind others: `window`='chrome', 'claude'...) with the vision
+    model - for pictures, charts, layout and status that text alone can't capture. For text, read_screen is faster."""
     import asyncio
 
     from ..vision import see

@@ -7,6 +7,8 @@ about it. Jobs are saved, so the list survives a restart (unfinished ones are ma
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import re
 import json
 import logging
 import time
@@ -61,9 +63,24 @@ def _update(j: dict[str, Any], **kw: Any) -> None:
     bus.emit("job", **_public(j))
 
 
+IN_JOB: contextvars.ContextVar[str] = contextvars.ContextVar("in_job", default="")
+
+
+def _same(a: str, b: str) -> bool:
+    def n(s: str) -> str:
+        return re.sub(r"\W+", " ", s.lower()).strip()[:300]
+    return n(a) == n(b)
+
+
 def start(task: str) -> dict[str, Any]:
     global _sem
+    if IN_JOB.get():
+        # a background job's own agent tried to hand its task off again - that's how one job became twenty
+        raise RuntimeError("This IS the background job - do the task yourself instead of starting another job.")
     _load()
+    for old in _jobs.values():                    # the same task already queued / running: that's the one
+        if old["status"] in ("queued", "running") and _same(old["task"], task):
+            return {**_public(old), "already": True}
     if _sem is None:
         _sem = asyncio.Semaphore(MAX_RUNNING)
     jid = uuid.uuid4().hex[:6]
@@ -93,6 +110,7 @@ async def _run(j: dict[str, Any]) -> None:
                     _update(j)
 
         watcher = asyncio.create_task(watch_tools())
+        IN_JOB.set(j["id"])
         _update(j, status="running", started=time.time())
         try:
             result = await agent.handle(j["task"] + JOB_NOTE, source="job")
@@ -114,13 +132,21 @@ async def _run(j: dict[str, Any]) -> None:
 
 
 def _announce(j: dict[str, Any]) -> None:
+    """Jarvis speaks up on his own: the whole result goes into the running conversation (the main chat knows it,
+    so "and what about X?" works next), a short version is said out loud, and the phone gets a notification."""
     from ..memory.store import memory
     from .engine import agent
 
-    text = f"Background job finished - {j['task'][:120]}:\n\n{j['result']}"
-    memory.add_message("assistant", text, {"job": j["id"]})
-    agent.messages.append({"role": "assistant", "content": text})  # the main chat knows the result
-    bus.emit("job_done", id=j["id"], task=j["task"], result=j["result"])
+    result = (j.get("result") or "").strip() or "Done."
+    sentences = re.split(r"(?<=[.!?])\s+", re.sub(r"[*#`>|_]", "", result).replace("\n", " "), maxsplit=2)
+    spoken = " ".join(sentences[:2])[:260]
+    task = re.sub(r"\s+", " ", j["task"])[:90]
+    text = f"**Background job done** - {task}\n\n{result}"
+    memory.add_message("assistant", text, {"job": j["id"], "proactive": "job"})
+    agent.messages.append({"role": "assistant", "content": text})
+    bus.emit("proactive", text=text, topic="job", job=j["id"])
+    bus.emit("job", id=j["id"], status="done")
+    agent._say(f"Your background job is done. {spoken}")
 
 
 def cancel(jid: str) -> dict[str, Any]:

@@ -166,6 +166,15 @@ class Brain:
                     kwargs.pop("tool_choice", None)
                     req_messages = _inject_react(messages, tools)
                     continue
+                fb = (s.fallback_model or "").strip()
+                if e.kind in ("server", "connection") and fb and model != fb:
+                    # the main model's servers are overloaded / down: answer with the backup model right away
+                    from ..events import bus
+
+                    bus.emit("notice", level="warn", text=f"{model.split('/')[-1]} is overloaded - using {fb.split('/')[-1]} for now")
+                    log.info("%s failed (%s); falling back to %s", model, e, fb)
+                    model = fb
+                    continue
                 if e.kind in ("rate_limit", "connection", "server") and attempt < 4:
                     delay = min(20.0, (2**attempt) + random.random())
                     from ..events import bus
@@ -297,6 +306,12 @@ class Brain:
                 return text, ch.finish_reason
             except Exception as e:
                 err = self._wrap(e)
+                fb = (config.store.load().fallback_model or "").strip()
+                if err.kind in ("server", "connection") and fb and (model or self.model()) != fb \
+                        and (model is None or model == self.model()):
+                    log.info("%s failed (%s); falling back to %s", model or self.model(), err, fb)
+                    model = fb                         # the main model is overloaded: the backup does this one
+                    continue
                 if err.kind in ("rate_limit", "connection", "server") and attempt < 3:
                     await asyncio.sleep(min(15.0, 2 ** attempt + random.random()))
                     continue

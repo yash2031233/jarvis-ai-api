@@ -23,7 +23,7 @@ class _Browser:
         self.page = None
         self.lock = asyncio.Lock()
 
-    async def page_(self, headless: bool = False):
+    async def page_(self, headless: bool = True):
         async with self.lock:
             if self.page is not None and not self.page.is_closed():
                 return self.page
@@ -77,7 +77,10 @@ async def _snapshot(page, max_chars: int = 5000) -> dict[str, Any]:
 @tool(risk="low", tags=["browser", "navigate", "website", "automate", "web page"],
       examples=["browser_open(url='https://github.com')"], timeout=45)
 async def browser_open(url: str) -> dict:
-    """Open a URL in Jarvis's automated browser and return a snapshot (text + clickable elements)."""
+    """Open a URL in Jarvis's OWN automated browser - a separate, hidden browser the user does NOT see and that isn't
+    signed in to their accounts - and return a snapshot (text + clickable elements). Use it to read or work through
+    sites in the background. To SHOW the user something, or anything in their accounts / "in my Chrome", use
+    open_url (their real browser) and the screen tools (read_screen, click_text, type_text) instead."""
     page = await B.page_()
     u = url if "://" in url else "https://" + url
     await page.goto(u, wait_until="domcontentloaded", timeout=30000)

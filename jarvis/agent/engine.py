@@ -222,7 +222,10 @@ class Agent:
         return "\n\n".join(parts)
 
     def _tool_set(self, text: str) -> list[str]:
-        return registry.select(text, k=14, enabled=permissions.is_enabled)
+        names = registry.select(text, k=14, enabled=permissions.is_enabled)
+        if self.job_id:                       # a background job does its task itself - it never starts another job
+            names = [n for n in names if n != "job"]
+        return names
 
     async def _agent_loop(self, text: str) -> str:
         s = config.store.load()

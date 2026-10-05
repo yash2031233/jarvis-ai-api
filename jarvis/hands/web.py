@@ -41,42 +41,27 @@ def _ddg_url(href: str) -> str:
     return href
 
 
-@tool(risk="low", tags=["search", "google", "web", "internet", "look up", "find online", "news"],
-      examples=["web_search(query='latest nvidia driver')"])
-async def web_search(query: str, max_results: int = 6) -> list[dict]:
-    """Search the web and return titles, URLs and snippets."""
-    r = await client().post("https://html.duckduckgo.com/html/", data={"q": query})
-    if r.status_code != 200:
-        raise ToolError(f"Search failed ({r.status_code}).", hint="Try again or use open_url with a search page.")
-    results = []
-    blocks = re.findall(r'(?s)<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
-                        r'(?:class="result__snippet"[^>]*>(.*?)</a>)?', r.text)
-    for href, title, snippet in blocks:
-        url = _ddg_url(html.unescape(href))
-        if "duckduckgo.com/y.js" in url:  # ads
-            continue
-        results.append({
-            "title": html_to_text(title),
-            "url": url,
-            "snippet": html_to_text(snippet or ""),
-        })
-        if len(results) >= max_results:
-            break
-    if not results:
-        raise ToolError("No results.", hint="Rephrase the query.")
-    return results
-
-
 @tool(risk="low", tags=["open", "website", "url", "link", "browser", "go to"],
       examples=["open_url(url='youtube.com')"])
-def open_url(url: str) -> str:
-    """Open a website in the user's default browser."""
+def open_url(url: str, browser: str = "", profile: str = "") -> str:
+    """Open a website (or a web app by name: 'spotify', 'gmail', 'youtube', 'new google doc' = a blank doc ready to
+    type in, 'new sheet', 'new slides') in the user's browser. `browser`: chrome | edge | brave (empty = default
+    browser). `profile`: which browser profile / account - 'personal', 'school', a profile name or email
+    (browser_profiles lists them). This is the user's real, signed-in browser that they see."""
+    from .browsers import BROWSERS, open_in, web_app_url
+
     u = url.strip()
+    u = web_app_url(u) or u
     if not re.match(r"^[a-z]+://", u):
         if " " in u or "." not in u:
             u = "https://duckduckgo.com/?q=" + quote_plus(u)
         else:
             u = "https://" + u
+    b = browser.strip().lower().replace("google ", "").replace("microsoft ", "")
+    if profile and not b:
+        b = "chrome"
+    if b in BROWSERS:
+        return open_in(b, u, profile)
     webbrowser.open(u)
     return f"Opened {u}"
 

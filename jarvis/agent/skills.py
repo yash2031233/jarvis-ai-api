@@ -119,7 +119,13 @@ async def job(action: str, task: str = "", id: str = "") -> dict:
         if a == "start":
             if len(task.strip()) < 10:
                 raise ToolError("Describe the task fully in `task`.")
-            j = jobs.start(task)
+            try:
+                j = jobs.start(task)
+            except RuntimeError as e:
+                raise ToolError(str(e))
+            if j.get("already"):
+                return {"already_running": j["id"], "status": j["status"],
+                        "note": "That exact job is already running - tell the user it's on its way. Don't start it again."}
             return {"started": j["id"], "status": j["status"],
                     "note": "It runs in the background and the user gets a notification with the result. Do NOT do "
                             "the task yourself now - just tell the user in one sentence that it's started."}

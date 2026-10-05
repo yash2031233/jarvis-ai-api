@@ -509,8 +509,13 @@ function renderModels() {
   vs.replaceChildren(new Option("Automatic (best available)", ""), ...vis.map((m) => new Option(m, m)));
   if (settings.vision_model && !vis.includes(settings.vision_model)) vs.append(new Option(settings.vision_model, settings.vision_model));
   vs.value = settings.vision_model || "";
+  const fb = $("sFallbackModel");
+  fb.replaceChildren(new Option("None", ""), ...allModels.filter((m) => m !== settings.model).map((m) => new Option(m, m)));
+  if (settings.fallback_model && !allModels.includes(settings.fallback_model)) fb.append(new Option(settings.fallback_model, settings.fallback_model));
+  fb.value = settings.fallback_model || "";
 }
 $("sVisionModel").onchange = () => save({ vision_model: $("sVisionModel").value });
+$("sFallbackModel").onchange = () => save({ fallback_model: $("sFallbackModel").value });
 $("sModelFilter").oninput = renderModels;
 $("btnLoadModels").onclick = () => loadModels(false);
 $("sModel").onchange = async () => { await save({ model: $("sModel").value }); $("modelResult").textContent = ""; testModel(); };
@@ -953,11 +958,12 @@ $("btnGmSave").addEventListener("click", async () => {
 async function loadDevicesPanel() {
   const s = settings || {};
   $("sPrinterKind").value = s.printer_kind || ""; $("sPrinterHost").value = s.printer_host || "";
-  $("sPrinterModel").value = s.printer_model || "";
+  $("sPrinterModel").value = s.printer_model || ""; $("sSearx").value = s.searxng_url || "";
   try {
     const k = await api("/api/secrets");
     $("sPrinterSerial").placeholder = k.printer_serial ? "serial (saved)" : "serial";
     $("sPrinterCode").placeholder = k.printer_code ? "check code (saved)" : "check code";
+    $("sBraveKey").placeholder = k.brave_search_key ? "saved" : "optional";
     if (phone) { const p = await api("/api/push"); $("pushStatus").textContent = p.phones ? `${p.phones} phone(s) get notifications` : ""; }
   } catch { /* optional */ }
 }
@@ -967,6 +973,11 @@ $("sPrinterModel").addEventListener("change", () => save({ printer_model: $("sPr
 $("btnPrinterSave").addEventListener("click", async () => {
   await api("/api/secrets", { method: "POST", body: { printer_serial: $("sPrinterSerial").value, printer_code: $("sPrinterCode").value } });
   $("sPrinterSerial").value = ""; $("sPrinterCode").value = ""; toast("Printer keys saved ✓"); loadDevicesPanel();
+});
+$("sSearx").addEventListener("change", () => save({ searxng_url: $("sSearx").value.trim() }));
+$("btnBraveSave").addEventListener("click", async () => {
+  await api("/api/secrets", { method: "POST", body: { brave_search_key: $("sBraveKey").value } });
+  $("sBraveKey").value = ""; toast("Search key saved ✓"); loadDevicesPanel();
 });
 async function loadPower() {
   try {

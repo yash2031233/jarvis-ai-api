@@ -135,7 +135,19 @@ def _launch(target: str) -> None:
     examples=["open_app(name='spotify')", "open_app(name='vs code')"],
 )
 def open_app(name: str) -> str:
-    """Open / launch an installed application by name (fuzzy matched)."""
+    """Open / launch an installed application by name (fuzzy matched). 'X in Y' (e.g. 'spotify in chrome') opens
+    the X web app in browser Y."""
+    m = re.match(r"^(.+?)\s+(?:in|on|with|using)\s+(?:google\s+)?(chrome|edge|brave|microsoft edge|the browser|browser)$",
+                 name.strip(), re.I)
+    if m:
+        from .browsers import open_in, web_app_url
+        from .web import open_url
+
+        b = m.group(2).lower().replace("microsoft ", "")
+        what = m.group(1)
+        if b in ("browser", "the browser"):
+            return open_url(web_app_url(what) or what)
+        return open_in(b, web_app_url(what) or what, "") if web_app_url(what) else open_url(what, b)
     hit = index.find(name)
     if not hit:
         raise ToolError(f"No installed app matches '{name}'.",

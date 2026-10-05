@@ -17,6 +17,7 @@ SETTABLE: dict[str, str] = {
     "personality": "Jarvis's personality / how he talks",
     "provider": "model provider: nvidia | lmstudio | ollama | custom",
     "model": "the model id to use",
+    "fallback_model": "backup model used when the main model is overloaded / down (empty = none)",
     "vision_model": "model used for images - car driving, cameras, screen (empty = automatic)",
     "temperature": "0-1, higher = more creative",
     "voice_enabled": "voice on/off (listening + speaking)",
