@@ -27,6 +27,26 @@ SR = 16000
 FRAME = 1280  # 80 ms — what openWakeWord expects
 
 
+def input_candidates() -> list[tuple[int, int]]:
+    """Every microphone as (index, samplerate), best first: Windows' own default, then WASAPI/MME/Core Audio/Pulse
+    devices; line-ins / stereo mix and kernel-streaming (WDM-KS) last."""
+    import sounddevice as sd
+
+    devs = sd.query_devices()
+    apis = {i: a["name"] for i, a in enumerate(sd.query_hostapis())}
+    rank = {"Windows WASAPI": 1, "MME": 1, "Windows DirectSound": 2, "Core Audio": 0, "ALSA": 1,
+            "PulseAudio": 0, "Windows WDM-KS": 5}
+    try:
+        default = sd.query_devices(kind="input")["name"]
+    except Exception:
+        default = None
+    cands = [("line" in d["name"].lower() or "stereo mix" in d["name"].lower(),
+              0 if d["name"] == default else rank.get(apis.get(d["hostapi"], ""), 3), i, d)
+             for i, d in enumerate(devs) if d["max_input_channels"] > 0]
+    cands.sort(key=lambda c: (c[0], c[1], c[2]))
+    return [(i, int(d["default_samplerate"])) for _, _, i, d in cands]
+
+
 def pick_input_device(preferred: int | None) -> tuple[int | None, int]:
     """Return (device index, native samplerate). Handles machines with no default input."""
     import sounddevice as sd
@@ -39,17 +59,11 @@ def pick_input_device(preferred: int | None) -> tuple[int | None, int]:
         return None, int(d["default_samplerate"])
     except Exception:
         pass
-    apis = {i: a["name"] for i, a in enumerate(sd.query_hostapis())}
-    rank = {"Windows WASAPI": 0, "MME": 1, "Windows DirectSound": 2, "Core Audio": 0, "ALSA": 1,
-            "PulseAudio": 0, "Windows WDM-KS": 5}
-    cands = [(rank.get(apis.get(d["hostapi"], ""), 3), i, d) for i, d in enumerate(devs)
-             if d["max_input_channels"] > 0]
+    cands = input_candidates()
     if not cands:
         raise RuntimeError("No microphone found. Check that a mic is connected and that "
                            "microphone access for desktop apps is allowed in your OS privacy settings.")
-    cands.sort(key=lambda c: (c[0], "line" in c[2]["name"].lower()))
-    _, idx, d = cands[0]
-    return idx, int(d["default_samplerate"])
+    return cands[0]
 
 
 def list_input_devices() -> list[dict]:
@@ -75,8 +89,18 @@ def list_output_devices() -> list[str]:
 
 
 def output_index(name: str) -> int | None:
-    """The device index for a speaker name; None = the system default (also when it's unplugged)."""
+    """The device index for a speaker name. "System default" on Windows = the MME Sound Mapper, which always plays on
+    the device Windows is using *now* (PortAudio's own default is frozen at startup, so switching from headphones to
+    speakers later left Jarvis talking into the headphones). None = PortAudio's default."""
     if not name:
+        try:
+            import sounddevice as sd
+
+            for i, d in enumerate(sd.query_devices()):
+                if d["max_output_channels"] > 0 and d["name"].startswith("Microsoft Sound Mapper"):
+                    return i
+        except Exception:
+            pass
         return None
     try:
         import sounddevice as sd
@@ -116,6 +140,15 @@ def match_wake(text: str, phrase: str) -> str | None:
     return None
 
 
+def _dev_name(idx: int | None, kind: int) -> str:
+    try:
+        import sounddevice as sd
+
+        return sd.query_devices(idx if idx is not None else sd.default.device[kind])["name"]
+    except Exception:
+        return "?"
+
+
 class VoicePipeline:
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
@@ -133,6 +166,11 @@ class VoicePipeline:
         self._stop = threading.Event()
         self._stream = None
         self._thread: threading.Thread | None = None
+        self._mic_t0: float | None = None
+        self._carry = False
+        self._carry_audio: np.ndarray | None = None
+        self._mic_peak = 0.0
+        self._mic_tried: set[int | None] = set()
         self.device_sr = SR
         self.device: int | None = None
         self._asked: set[str] = set()
@@ -164,6 +202,9 @@ class VoicePipeline:
             self.ready = True
             self._open_mic()
             self._set_status("ready")
+            log.info("voice: mic = %s | speaker = %s | wake = %s%s", _dev_name(self.device, 0),
+                     _dev_name(self.tts.output_device, 1), self._wake_phrase or "off",
+                     " + hey jarvis model" if self.wake else "")
         except Exception as e:
             log.exception("voice failed to start")
             self._set_status("error", str(e))
@@ -181,11 +222,11 @@ class VoicePipeline:
                           melspec_model_path=str(next(d.glob("melspectrogram*.onnx"))),
                           embedding_model_path=str(next(d.glob("embedding_model*.onnx"))))
 
-    def _open_mic(self) -> None:
+    def _open_mic(self, device: tuple[int | None, int] | None = None) -> None:
         import sounddevice as sd
 
         s = config.store.load()
-        self.device, self.device_sr = pick_input_device(s.mic_device)
+        self.device, self.device_sr = device or pick_input_device(s.mic_device)
         blocksize = int(self.device_sr * FRAME / SR)
 
         def cb(indata, frames, t, status):
@@ -198,8 +239,38 @@ class VoicePipeline:
         self._stream = sd.InputStream(samplerate=self.device_sr, channels=1, dtype="float32",
                                       blocksize=blocksize, device=self.device, callback=cb)
         self._stream.start()
-        self._thread = threading.Thread(target=self._loop, daemon=True, name="voice-loop")
-        self._thread.start()
+        self._mic_t0, self._mic_peak = time.time(), 0.0
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._loop, daemon=True, name="voice-loop")
+            self._thread.start()
+
+    def _check_mic(self, rms: float) -> None:
+        """A mic that delivers pure silence (wrong jack, a disabled device, Line In) is swapped for the next one."""
+        if self._mic_t0 is None:
+            return
+        self._mic_peak = max(self._mic_peak, rms)
+        if time.time() - self._mic_t0 < 8:
+            return
+        self._mic_t0 = None
+        if self._mic_peak > 3e-4:
+            return
+        self._mic_tried.add(self.device)
+        if config.store.load().mic_device is None:
+            for idx, sr in input_candidates():
+                if idx in self._mic_tried:
+                    continue
+                log.warning("voice: %s is silent, trying another mic", _dev_name(self.device, 0))
+                try:
+                    self._stream.stop()
+                    self._stream.close()
+                    self._open_mic((idx, sr))
+                    return
+                except Exception as e:
+                    self._mic_tried.add(idx)
+                    log.warning("voice: mic %s won't open: %s", idx, e)
+        log.warning("voice: the microphone (%s) hears nothing", _dev_name(self.device, 0))
+        bus.emit("notice", level="warn", text="Your microphone isn't picking anything up - pick the right one in "
+                                              "Settings → Voice → Microphone (and check it isn't muted).")
 
     def shutdown(self) -> None:
         self._stop.set()
@@ -245,6 +316,7 @@ class VoicePipeline:
         spot: list[np.ndarray] | None = None   # an utterance being collected to check for the wake phrase
         spot_sil = 0
         spot_t0 = 0.0
+        after_spot: list[np.ndarray] | None = None   # what was said while a phrase was being checked
 
         while not self._stop.is_set():
             try:
@@ -254,6 +326,7 @@ class VoicePipeline:
             frame = self._resample(raw)
             rms = float(np.sqrt(np.mean(frame ** 2)) + 1e-9)
             now = time.time()
+            self._check_mic(rms)
             if now - last_level_emit > 0.033:
                 bus.emit("level", source="mic", value=min(1.0, rms * 12))
                 last_level_emit = now
@@ -262,6 +335,12 @@ class VoicePipeline:
             if self.mode == "idle":
                 noise = 0.995 * noise + 0.005 * min(rms, 0.05)
                 pre_roll.append(frame)
+                if after_spot is not None:
+                    if self._spotting or self._carry:
+                        after_spot.append(frame)
+                        del after_spot[:-100]                 # 8 s is plenty
+                    else:
+                        after_spot = None
                 woke = False
                 if self._ptt.is_set():
                     self._ptt.clear()
@@ -275,15 +354,16 @@ class VoicePipeline:
                 # "Jarvis …": speech in the room is transcribed a phrase at a time (fast on a GPU) and checked
                 if not woke and self._wake_phrase and not self._spotting:
                     if spot is None:
-                        if rms > max(0.015, noise * 3.5):
+                        if rms > max(0.006, noise * 3.5):
                             spot, spot_sil, spot_t0 = list(pre_roll), 0, now
                     else:
                         spot.append(frame)
-                        spot_sil = 0 if rms > max(0.012, noise * 3.0) else spot_sil + 80
+                        spot_sil = 0 if rms > max(0.005, noise * 3.0) else spot_sil + 80
                         if spot_sil >= 560 or now - spot_t0 > 6:
                             audio, spot = np.concatenate(spot), None
                             if len(audio) > SR * 0.35:
                                 self._spotting = True
+                                after_spot = []
                                 threading.Thread(target=self._spot, args=(audio,), daemon=True).start()
                 if woke:
                     spot = None
@@ -291,7 +371,17 @@ class VoicePipeline:
                     self.mode = "listening"
                     speech = []
                     heard_voice = False
+                    if self._carry:
+                        # "Jarvis … what time is it": the request started while the name was being recognized
+                        speech = ([self._carry_audio] if self._carry_audio is not None else []) + (after_spot or [])
+                        heard_voice = self._carry_audio is not None or any(
+                            float(np.sqrt(np.mean(f ** 2))) > max(0.006, noise * 3.0) for f in speech)
+                    self._carry, self._carry_audio, after_spot = False, None, None
                     silence_ms = 0
+                    for f in reversed(speech[1:] if heard_voice else []):   # they may have finished already
+                        if float(np.sqrt(np.mean(f ** 2))) > max(0.006, noise * 3.0):
+                            break
+                        silence_ms += 80 if len(f) == FRAME else 0
                     listen_started = now
                     orb_state("listening")
                     bus.emit("listening", on=True)
@@ -300,7 +390,7 @@ class VoicePipeline:
             # ---- listening: collect until end of speech
             if self.mode == "listening":
                 speech.append(frame)
-                threshold = max(0.012, noise * 3.0)
+                threshold = max(0.006, noise * 3.0)
                 if rms > threshold:
                     heard_voice = True
                     silence_ms = 0
@@ -344,18 +434,17 @@ class VoicePipeline:
         try:
             text = self.stt.transcribe(audio, prompt="Jarvis")
             rest = match_wake(text, self._wake_phrase)
+            log.debug("wake check heard %r -> %s", text, "woke" if rest is not None else "no")
             if rest is None or self.mode != "idle":
                 return
-            if len(rest.split()) >= 2:            # "Jarvis, open Spotify": the request came with the name
-                self.interrupt()
-                self.mode = "processing"
-                orb_state("thinking")
-                bus.emit("transcript", text=rest, ms=0)
-                threading.Thread(target=self._process_text, args=(rest,), daemon=True).start()
-            else:                                 # just "Jarvis": listen for the request
-                self._ptt.set()
+            # "Jarvis, open Spotify": the request came with the name - keep listening until they've actually finished
+            # (a pause mid-sentence ended this phrase) and take the whole thing. Just "Jarvis": listen for the request.
+            # Either way what was said while this was being checked is kept.
+            self._carry_audio = audio if rest else None
+            self._carry = True
+            self._ptt.set()
         except Exception as e:
-            log.debug("wake phrase check failed: %s", e)
+            log.warning("wake phrase check failed: %s", e)
         finally:
             self._spotting = False
 
@@ -368,6 +457,9 @@ class VoicePipeline:
         t0 = time.time()
         try:
             text = self.stt.transcribe(audio)
+            if self._wake_phrase:
+                rest = match_wake(text, self._wake_phrase)
+                text = text if rest is None else rest
         except Exception as e:
             log.warning("transcription failed: %s", e)
             text = ""

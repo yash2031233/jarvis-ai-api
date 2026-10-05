@@ -57,6 +57,7 @@ class TTS:
         self._worker: threading.Thread | None = None
         self.on_idle = None  # callback when the queue drains
         self.last_first_audio_ms: int | None = None
+        self._working = False   # a sentence is being synthesized (not playing yet, but not idle either)
 
     # ------------------------------------------------------------------ loading
     def load(self) -> None:
@@ -146,7 +147,7 @@ class TTS:
             pass
 
     def is_busy(self) -> bool:
-        return self.speaking.is_set() or not self.q.empty()
+        return self._working or self.speaking.is_set() or not self.q.empty()
 
     def _run(self) -> None:
         import sounddevice as sd
@@ -157,6 +158,7 @@ class TTS:
                 return
             if self.stop_flag.is_set():
                 continue
+            self._working = True
             t0 = time.time()
             out = None
             sr_open = None
@@ -185,6 +187,7 @@ class TTS:
                     except Exception:
                         pass
             self.speaking.clear()
+            self._working = False
             if self.q.empty():
                 bus.emit("level", source="tts", value=0.0)
                 if self.on_idle:

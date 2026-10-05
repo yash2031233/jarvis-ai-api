@@ -284,7 +284,7 @@ $("prompt").addEventListener("submit", (e) => {
   const text = $("input").value.trim();
   if (!text) return;
   promptHistory.unshift(text); histIdx = -1;
-  if (phone) phone.typed();
+  if (phone) phone.typed(!settings || settings.voice_enabled !== false);
   send({ type: "ask", text, source: phone ? "phone" : "text" });
   $("input").value = "";
 });

@@ -203,7 +203,7 @@ export function createPhone({ api, token, orb, toast, onText }) {
 
   return {
     listen, say, stop, feed, finish, gpsOn, enablePush,
-    typed() { speakReplies = false; stop(); },             // typed questions get a typed answer (no surprise audio)
+    typed(speak = true) { stop(); speakReplies = speak; },  // replies are read out on the phone too (voice off = silent)
     get speaking() { return busy; },
   };
 }
