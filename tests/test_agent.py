@@ -148,3 +148,25 @@ def test_backup_model_takes_over_when_the_main_one_is_overloaded(monkeypatch):
     finally:
         config.store.update(fallback_model="")
     assert r.text == "from backup" and used == ["main", "backup"]
+
+
+def test_endless_searching_is_told_to_stop_and_answer(agent, monkeypatch):
+    """A model that rewords the same search again and again (until the step limit) is told to answer instead."""
+    from jarvis.hands import search
+
+    async def source(q, n, news):
+        return [{"title": "Some page", "url": "https://example.org/a", "snippet": "not quite it"}]
+
+    async def read(url, chars):
+        return ""
+
+    monkeypatch.setattr(search, "SOURCES", [("fake", source)])
+    monkeypatch.setattr(search, "_read", read)
+    fake = FakeBrain([TurnResult(tool_calls=[ToolCall("web_search", {"query": f"blue widget shop {i}"})])
+                      for i in range(3)] + [TurnResult(text="I couldn't find the shop's address.")])
+    reply = _run(agent, fake, "find the blue widget shop's address", monkeypatch)
+    assert reply == "I couldn't find the shop's address."
+    last = [m for m in fake.seen[3] if m["role"] == "tool"][-1]["content"]
+    assert "Don't search again" in last
+    first = [m for m in fake.seen[1] if m["role"] == "tool"][-1]["content"]
+    assert "Don't search again" not in first

@@ -69,6 +69,7 @@ class Tool:
     timeout: float = 60.0
     verify: Callable[[dict[str, Any], Any], bool] | None = None
     undo: bool = False
+    max_chars: int = 4000          # how much of the result the model gets to see
 
     def schema(self) -> dict[str, Any]:
         params = self.args_model.model_json_schema()
@@ -200,6 +201,7 @@ def tool(
     timeout: float = 60.0,
     verify: Callable[[dict[str, Any], Any], bool] | None = None,
     undo: bool = False,
+    max_chars: int = 4000,
     reg: Registry | None = None,
 ):
     """Decorator that registers a function as a Jarvis tool."""
@@ -225,6 +227,7 @@ def tool(
             timeout=timeout,
             verify=verify,
             undo=undo,
+            max_chars=max_chars,
         )
         (reg or registry).register(t)
         fn.__jarvis_tool__ = t  # type: ignore[attr-defined]
