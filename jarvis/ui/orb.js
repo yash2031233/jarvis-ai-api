@@ -38,6 +38,7 @@ export const ORB_CONFIG = {
   arcs: { count: 34 },
   surface: { chains: 560 },
   core: { cx: 962, cy: 978, r: 330, rings: 60, chains: 480 },
+  heart: { r: 118, chains: 150, orbits: 6 },  // the nucleus: small, dense and bright, at the very centre
   ring: { cx: 960, cy: 992, a: 655, b: 176, tilt: -0.4, chains: 44 },
   streak: { from: [788, 672], to: [1240, 1402], lines: 7 },
   comet: { from: [1305, 1132], to: [1575, 1035], chains: 14 },
@@ -304,6 +305,26 @@ export function buildLayers(cfg) {
     }
   }
 
+  // ---- 4b. the heart: a small, dense, bright nucleus at the very centre, with a few tight orbits around it
+  {
+    const lay = (L.heart = new Layer("heart"));
+    const { cx, cy } = cfg.core;
+    const R = cfg.heart.r;
+    const inHeart = (x, y) => Math.hypot(x - cx, y - cy) < R;
+    for (let i = 0; i < cfg.heart.chains; i++) {
+      const a = rng() * Math.PI * 2, rr = Math.sqrt(rng()) * R * 0.95;
+      chem.chain(lay, cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, {
+        steps: chem.rand(4, 11), seg: cfg.seg * 0.8, turn: 0.25, branch: 0.15, hex: 0.12,
+        dotEnd: 0.3, dotBranch: 0.3, keep: inHeart, alpha: 0.72,
+      });
+    }
+    for (let i = 0; i < cfg.heart.orbits; i++) {
+      const rr = R * chem.rand(1.15, 1.75), pts = [];
+      for (let t = 0; t <= Math.PI * 2 + 0.001; t += 0.02) pts.push([cx + Math.cos(t) * rr, cy + Math.sin(t) * rr]);
+      lay.line(pts, chem.rand(0.55, 0.85));
+    }
+  }
+
   // ---- 5. equatorial ring (Saturn-like, extends past the sphere)
   {
     const lay = (L.ring = new Layer("ring"));
@@ -463,7 +484,7 @@ function bakeLayer(layer, cfg, scale) {
 }
 
 // ------------------------------------------------------------------ renderer
-export const LAYER_ORDER = ["outer", "arcs", "surface", "core", "ring", "comet", "streak"];
+export const LAYER_ORDER = ["outer", "arcs", "surface", "core", "heart", "ring", "comet", "streak"];
 
 export class Orb2D {
   constructor(canvas, opts = {}) {
@@ -562,6 +583,7 @@ export class Orb2D {
       arcs: t * (0.012 + e * 0.12),
       surface: 0.015 * Math.sin(t * 0.13 + 1) - e * t * 0.0,
       core: -t * (0.03 + e * 0.35),
+      heart: t * (0.08 + e * 0.6),
       ring: 0.004 * Math.sin(t * 0.3),
       comet: 0.01 * Math.sin(t * 0.25),
       streak: 0,
@@ -571,6 +593,7 @@ export class Orb2D {
       arcs: 1 + 0.25 * e,
       surface: 1,
       core: 1 + 0.35 * e + (st === "speaking" ? 0.5 * lv : 0),
+      heart: 1.0 + 0.4 * e + (st === "speaking" ? 0.9 * lv : 0) + 0.08 * Math.sin(t * 1.6),
       ring: 1 + (st === "speaking" ? 0.45 * lv : 0) + 0.15 * e,
       comet: 1,
       streak: 1 + (st === "working" ? 0.4 + 0.3 * Math.sin(t * 8) : 0),
@@ -596,7 +619,7 @@ export class Orb2D {
       ctx.scale(fit * breathe * pulse, fit * breathe * pulse);
       ctx.translate(CX - cfg.size / 2, CY - cfg.size / 2);
       // rotate around the layer's own center
-      const pivot = k === "core" ? [cfg.core.cx, cfg.core.cy] : [CX, CY];
+      const pivot = k === "core" || k === "heart" ? [cfg.core.cx, cfg.core.cy] : [CX, CY];
       ctx.translate(pivot[0] - CX, pivot[1] - CY);
       ctx.rotate(spin[k] || 0);
       ctx.translate(-pivot[0], -pivot[1]);

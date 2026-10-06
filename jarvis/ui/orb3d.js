@@ -51,6 +51,7 @@ function liftFunctions(cfg) {
     arcs: tiltedCircle(0, 0),
     surface: sphere(0, 0, 660),
     core: (x, y, p) => (p.ringLike ? tiltedCircle(core.cx, core.cy)(x, y, p) : sphere(core.cx, core.cy, cfg.core.r * 1.04)(x, y, p)),
+    heart: (x, y, p) => (p.ringLike ? tiltedCircle(core.cx, core.cy)(x, y, p) : sphere(core.cx, core.cy, cfg.heart.r * 1.05)(x, y, p)),
     ring: (x, y) => {
       // the ellipse is a circle of radius a in a plane tilted by acos(b/a); upper arc = front
       const dy = y - (ring.cy - CY);
@@ -67,9 +68,12 @@ function liftFunctions(cfg) {
 function polyParams(layer, rng, cfg, pts) {
   const p = { sign: 1, depth: 1, tilt: 0, phase: 0, ringLike: false };
   switch (layer) {
-    case "outer": p.sign = rng() < 0.78 ? 1 : -1; p.depth = 0.9 + rng() * 0.1; break;
-    case "surface": p.sign = rng() < 0.6 ? 1 : -1; p.depth = 0.85 + rng() * 0.15; break;
+    // front and back filled alike, and lines spread through the depth rather than all on the outside of a shell:
+    // turned sideways, the orb used to show a hollow slab through the middle and a thin back half
+    case "outer": p.sign = rng() < 0.52 ? 1 : -1; p.depth = 0.62 + rng() * 0.38; break;
+    case "surface": p.sign = rng() < 0.5 ? 1 : -1; p.depth = 0.2 + rng() * 0.8; break;
     case "arcs": p.tilt = (rng() * 2 - 1) * 32 * D2R; p.phase = rng() * Math.PI * 2; break;
+    case "heart":
     case "core": {
       // the smooth concentric rings become gyroscope-like tilted circles; chains sit on a sphere
       const [CX, CY] = cfg.center;
@@ -77,8 +81,8 @@ function polyParams(layer, rng, cfg, pts) {
       const r0 = Math.hypot(pts[0][0] - cx, pts[0][1] - cy);
       const r1 = Math.hypot(pts[pts.length - 1][0] - cx, pts[pts.length - 1][1] - cy);
       p.ringLike = pts.length > 60 && Math.abs(r0 - r1) < 25;
-      p.tilt = (rng() * 2 - 1) * 55 * D2R; p.phase = rng() * Math.PI * 2;
-      p.sign = rng() < 0.55 ? 1 : -1; p.depth = 0.6 + rng() * 0.4;
+      p.tilt = (rng() * 2 - 1) * (layer === "heart" ? 80 : 55) * D2R; p.phase = rng() * Math.PI * 2;
+      p.sign = rng() < 0.5 ? 1 : -1; p.depth = rng();             // a solid ball: z anywhere inside it
       break;
     }
   }
@@ -524,6 +528,7 @@ class Orb3D {
       arcs: t * (0.012 + e * 0.12),
       surface: 0.015 * Math.sin(t * 0.13 + 1),
       core: -t * (0.03 + e * 0.35),
+      heart: t * (0.08 + e * 0.6),
       ring: 0.004 * Math.sin(t * 0.3),
       comet: 0.01 * Math.sin(t * 0.25),
       streak: 0,
@@ -533,6 +538,7 @@ class Orb3D {
       arcs: 1 + 0.25 * e,
       surface: 1,
       core: 1 + 0.35 * e + (st === "speaking" ? 0.5 * lv : 0),
+      heart: 1.0 + 0.4 * e + (st === "speaking" ? 0.9 * lv : 0) + 0.08 * Math.sin(t * 1.6),
       ring: 1 + (st === "speaking" ? 0.45 * lv : 0) + 0.15 * e,
       comet: 1,
       streak: 1 + (st === "working" ? 0.4 + 0.3 * Math.sin(t * 8) : 0),
@@ -561,7 +567,7 @@ class Orb3D {
       const k = glowK[name];
       const intensity = base * (Math.min(1, k) + Math.max(0, (k - 1) * 0.8));
       gl.uniformMatrix3fv(L.u.uRot, false, rotZ(spin[name] || 0));
-      const pv = name === "core" ? corePivot : [0, 0, 0];
+      const pv = name === "core" || name === "heart" ? corePivot : [0, 0, 0];
       gl.uniform3f(L.u.uPivot, pv[0], pv[1], pv[2]);
       gl.uniform1f(L.u.uIntensity, Math.min(1, intensity));
       gl.bindVertexArray(this.layers[name].vao);
