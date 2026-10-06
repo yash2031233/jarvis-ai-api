@@ -4,7 +4,9 @@
 //   pinch-drag on the 3D part     turn it; two hands pinching on it: pull apart / together to zoom
 //   quick pinch (air tap)         press whatever's under your fingers (buttons, cards, list items)
 //   pinch-drag elsewhere          scroll the list under your fingers
-//   open palm, swipe              close the screen that's open (or open the conversation history)
+//   pinch-drag on the map         pan it; two hands pinching on it: pull apart / together to zoom
+//   pinch a slider                drag to set it
+//   open palm, swipe left / right go to the previous / next screen (map, cameras, hub...); swipe down: back home
 //   open palm, held still         stop: cuts Jarvis off mid-sentence / stops what he's doing
 // Air mouse (Settings → Hand control): the hand drives the REAL mouse in every app - pinch = click / drag, middle-
 // finger pinch = right click, fist + move = scroll (the server moves the cursor: hands/air.py).
@@ -15,7 +17,7 @@ const MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/h
 const EDGES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13],
   [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 
-export function createHolo({ toast, stop: stopJarvis, send = () => {}, settings = () => ({}) }) {
+export function createHolo({ toast, stop: stopJarvis, send = () => {}, settings = () => ({}), map = null, openPanel = () => {} }) {
   const airOn = () => !!(settings() || {}).air_mouse;
   const body = document.body;
   const H = { on: false, starting: false };
@@ -211,7 +213,10 @@ export function createHolo({ toast, stop: stopJarvis, send = () => {}, settings 
   function pinchStart(h) {
     const el = underCursor(h);
     h.t0 = performance.now(); h.moved = 0; h.target = el; h.mode = "tap";
+    const pressable = el && el.closest && el.closest("button, a, input:not([type=range]), textarea, select, label, summary, .leaflet-marker-icon, .leaflet-control");
     if (el && el === orbCanvas()) { h.mode = "orb"; ptr("pointerdown", h, el); }
+    else if (el && el.closest && el.closest("input[type=range]")) { h.mode = "slider"; h.slider = el.closest("input[type=range]"); slide(h); }
+    else if (el && el.closest && el.closest("#leaf") && !pressable && map) { h.mode = "map"; map.hand.grab(); }
     else if (el && el.closest && el.closest("#mv3d") && window.JarvisModelView) h.mode = "model";
     else if (el) h.scroller = scrollerOf(el);
     flash(h.cursor, h.mode === "orb" ? 26 : 16);
@@ -221,11 +226,15 @@ export function createHolo({ toast, stop: stopJarvis, send = () => {}, settings 
     const dx = h.cursor[0] - prev[0], dy = h.cursor[1] - prev[1];
     h.moved += Math.hypot(dx, dy);
     if (h.mode === "orb") ptr("pointermove", h, orbCanvas());
+    else if (h.mode === "slider") slide(h);
+    else if (h.mode === "map" && !two) map.hand.panBy(dx * 1.4, dy * 1.4);
     else if (h.mode === "model" && !two) orbit((r, th, ph) => [r, th - dx * 0.008, ph - dy * 0.008]);
     else if (h.moved > 30 && h.scroller) { h.mode = "scroll"; h.scroller.scrollBy({ top: -dy * 1.6, left: -dx * 1.6 }); }
   }
   function pinchEnd(h) {
     if (h.mode === "orb") { ptr("pointerup", h, orbCanvas()); }
+    else if (h.mode === "slider") h.slider.dispatchEvent(new Event("change", { bubbles: true }));
+    else if (h.mode === "map" && performance.now() - h.t0 < 450 && h.moved < 40) tap(h);   // a quick pinch on the map = a click
     else if (h.mode === "tap" && performance.now() - h.t0 < 450 && h.moved < 40) tap(h);
     h.mode = null; h.last = null; h.scroller = null;
   }
@@ -239,6 +248,13 @@ export function createHolo({ toast, stop: stopJarvis, send = () => {}, settings 
     if (!el || el === body || el === document.documentElement || el === orbCanvas()) return;
     flash(h.cursor, 34, true);
     if (el.matches("input, textarea")) el.focus(); else el.click();
+  }
+  function slide(h) {                                            // a slider follows the pinch along its length
+    const s = h.slider, r = s.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (h.cursor[0] - r.left) / Math.max(1, r.width)));
+    const lo = +s.min || 0, hi = s.max === "" ? 100 : +s.max, step = +s.step || 1;
+    const v = Math.round((lo + f * (hi - lo)) / step) * step;
+    if (String(v) !== s.value) { s.value = String(v); s.dispatchEvent(new Event("input", { bubbles: true })); }
   }
   function scrollerOf(el) {
     for (let e = el; e && e !== body; e = e.parentElement) {
@@ -264,17 +280,22 @@ export function createHolo({ toast, stop: stopJarvis, send = () => {}, settings 
   }
   function twoHands() {
     const p = hands.filter((h) => h.pinch);
-    if (p.length < 2) { two = null; return; }
+    if (p.length < 2) { if (two && two.map && map) map.hand.zoomEnd(); two = null; return; }
     const d = Math.hypot(p[0].cursor[0] - p[1].cursor[0], p[0].cursor[1] - p[1].cursor[1]);
-    if (!two) { two = { dPrev: d }; return; }
-    if (body.dataset.mode === "model") { const k = two.dPrev / d; orbit((r, th, ph) => [Math.max(5, r * k), th, ph]); two.dPrev = d; }
+    if (!two) { two = { dPrev: d, map: p.some((h) => h.mode === "map") }; return; }
+    if (two.map && map) {                                          // pull apart = zoom in, at the middle of the hands
+      map.hand.zoomBy(d / two.dPrev, (p[0].cursor[0] + p[1].cursor[0]) / 2, (p[0].cursor[1] + p[1].cursor[1]) / 2);
+      two.dPrev = d;
+    } else if (body.dataset.mode === "model") { const k = two.dPrev / d; orbit((r, th, ph) => [Math.max(5, r * k), th, ph]); two.dPrev = d; }
   }
   function palmGestures(h, t) {
     if (!h.palm) { h.palmSince = 0; return; }
     const hs = h.hist;
     if (hs.length > 3 && !h.swiped) {
-      const [t0, x0] = hs[0], [t1, x1] = hs[hs.length - 1], v = (x1 - x0) / Math.max(1, t1 - t0) * 1000;
-      if (Math.abs(v) > innerWidth * 1.6) { h.swiped = t; swipe(v > 0 ? 1 : -1); }
+      const [t0, x0, y0] = hs[0], [t1, x1, y1] = hs[hs.length - 1], dt = Math.max(1, t1 - t0);
+      const vx = (x1 - x0) / dt * 1000, vy = (y1 - y0) / dt * 1000;
+      if (Math.abs(vx) > innerWidth * 1.6 && Math.abs(vx) > Math.abs(vy)) { h.swiped = t; swipe(vx > 0 ? 1 : -1); }
+      else if (vy > innerHeight * 1.6 && vy > Math.abs(vx)) { h.swiped = t; swipe(0); }
     }
     if (h.swiped && t - h.swiped > 900) h.swiped = 0;
     h.palmSince = h.palmSince || t;
@@ -282,13 +303,22 @@ export function createHolo({ toast, stop: stopJarvis, send = () => {}, settings 
     if (!still) h.palmSince = t;
     if (t - h.palmSince > 900 && !h.stopped) { h.stopped = true; stopJarvis(); toast("✋ Stopped"); setTimeout(() => { h.stopped = false; }, 2500); }
   }
+  // palm swipes move between Jarvis's screens like pages: right = next, left = previous, down = back home
+  const SCREENS = ["home", "map", "camera", "hub", "study"];
+  const PANEL = { home: "close", map: "map", camera: "cameras", hub: "hub", study: "study" };
+  const SCREEN_NAME = { home: "Home", map: "Map", camera: "Cameras", hub: "Dashboard", study: "Study" };
   function swipe(dir) {
-    flash([dir > 0 ? innerWidth * 0.8 : innerWidth * 0.2, innerHeight / 2], 60, true);
-    const close = document.querySelector("body[data-mode='hub'] #hubClose, body[data-mode='map'] #mapClose, " +
-      "body[data-mode='camera'] #camClose, body[data-mode='model'] #mvClose, body[data-mode='study'] #studyClose");
-    if (close) close.click();
-    else if (!document.getElementById("history").classList.contains("hidden")) document.querySelector("[data-close=history]").click();
-    else document.getElementById("btnHistory").click();
+    flash([dir > 0 ? innerWidth * 0.8 : dir < 0 ? innerWidth * 0.2 : innerWidth / 2, dir ? innerHeight / 2 : innerHeight * 0.8], 60, true);
+    const drawer = ["history", "settings"].find((id) => !document.getElementById(id).classList.contains("hidden"));
+    if (dir === 0 || drawer) {                                     // down (or a drawer is open): close it / go home
+      if (drawer) { const x = document.querySelector(`[data-close=${drawer}]`); if (x) { x.click(); return; } }
+      openPanel("close"); toast("Home", "info", 1200); return;
+    }
+    const cur = SCREENS.indexOf(body.dataset.mode || "home");
+    const next = SCREENS[(Math.max(0, cur) + dir + SCREENS.length) % SCREENS.length];
+    openPanel("close");
+    if (next !== "home") setTimeout(() => openPanel(PANEL[next]), 60);
+    toast(SCREEN_NAME[next], "info", 1200);
   }
 
   const flashes = [];

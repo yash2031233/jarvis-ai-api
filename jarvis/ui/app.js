@@ -1084,7 +1084,7 @@ const hub = createHub({
 });
 $("btnHub").addEventListener("click", () => (hub.isOpen ? hub.close() : hub.open()));
 const holo = createHolo({ toast: (...a) => toast(...a), stop: () => { if (phone) phone.stop(); send({ type: "cancel" }); },
-  send: (m) => send(m), settings: () => settings });
+  send: (m) => send(m), settings: () => settings, map: mapview, openPanel: (p) => openPanel(p) });
 window.jarvis.holo = holo;                       // for poking at hand control from the dev console
 $("btnHands").addEventListener("click", () => holo.toggle());
 mapview.prewarm();

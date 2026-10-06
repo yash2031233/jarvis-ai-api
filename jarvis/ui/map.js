@@ -630,5 +630,17 @@ export function createMap({ api, onOpen, onClose, speak: speakHere = null }) {
     return { start, stop, fix, localFresh, browse, follow, get on() { return N.on; }, get browsing() { return N.browse; } };
   })();
 
-  return { show, open, close, geo, nav, prewarm, get isOpen() { return document.body.dataset.mode === "map"; } };
+  // hand control (holo.js): grab = take the map (navigating: switch to looking around), then pan / zoom at a point
+  const hand = {
+    grab() { if (nav.on && !nav.browsing) nav.browse(); followMe = false; const b = $("#mapMe"); if (b) b.classList.add("off"); },
+    panBy(dx, dy) { if (map) map.panBy([-dx, -dy], { animate: false }); },
+    zoomBy(k, x, y) {
+      if (!map || !(k > 0)) return;
+      map.options.zoomSnap = 0;
+      const r = $("#leaf").getBoundingClientRect();
+      map.setZoomAround(L.point(x - r.left, y - r.top), map.getZoom() + Math.log2(k), { animate: false });
+    },
+    zoomEnd() { if (map && !nav.on) { map.options.zoomSnap = 1; map.setZoom(Math.round(map.getZoom()), { animate: true }); } },
+  };
+  return { show, open, close, geo, nav, prewarm, hand, get isOpen() { return document.body.dataset.mode === "map"; } };
 }
