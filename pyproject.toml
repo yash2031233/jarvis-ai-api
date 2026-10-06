@@ -38,7 +38,7 @@ voice = [
 browser = ["playwright>=1.40"]
 # NVIDIA GPU speech recognition on Windows/Linux (CUDA 12 runtime libs for faster-whisper)
 gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9,<10"]
-desktop = ["pynput>=1.7", "pystray>=0.19", "pillow>=10"]
+desktop = ["pynput>=1.7", "pystray>=0.19", "pillow>=10", "uiautomation>=2.0.20; sys_platform == 'win32'"]
 docs = ["pypdf>=4", "python-docx>=1"]
 # cameras, screen reading/recording, diagrams
 vision = ["opencv-python>=4.8", "mss>=9"]

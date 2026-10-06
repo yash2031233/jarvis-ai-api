@@ -239,7 +239,7 @@ def tool(
 def load_builtin_tools() -> None:
     from . import (  # noqa: F401
         apps, briefing, browser, browsers, cad, camera, clipboard, codeexec, control, diagram, files, location, media, notes,
-        recording, robot, screen, search, shell, study, system, timers, weather, web,
+        recording, robot, screen, search, shell, study, system, timers, uia, weather, web,
     )
     from ..agent import skills  # noqa: F401  (skill tools)
     from ..agent import habits  # noqa: F401  (habit tools)

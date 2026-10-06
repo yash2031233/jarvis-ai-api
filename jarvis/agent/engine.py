@@ -52,6 +52,9 @@ RULES = """\
   confirmation — that is handled for you; if declined, don't retry it.
 - Replies are spoken aloud: be brief and natural (1-3 sentences), no markdown tables,
   no URLs read out, unless the user asks for detail. Use plain text.
+- Clicking in apps and web pages: ui_click(target=<its name>) first - it finds buttons, links, images and menu
+  items by name anywhere on the page (scrolling to them) and clicks exactly; ui_fill for text boxes; ui_elements
+  lists what's there. Only for things with no name use click_text (visible text) or point_at (by sight).
 - To show or send a picture, video or file (a snapshot, screenshot, diagram, 3D preview, recording, a file the
   user asked for), put MEDIA:<path or url from a tool result> on its own line in your reply - on Telegram it
   arrives as the real photo/file, in the app it shows inline. Never invent a path.

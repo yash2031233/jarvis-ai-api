@@ -84,12 +84,26 @@ async def ask(images: list[np.ndarray], prompt: str, system: str = "", max_token
                         "image_url": {"url": f"data:image/jpeg;base64,{jpeg_b64(img, max_side)}"}})
     messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": content}]
     last: Exception | None = None
+    import asyncio
+
     for model in await candidates():
         try:
-            text, _ = await brain.complete(messages, max_tokens=max_tokens, temperature=0.2, model=model)
+            for attempt in range(3):             # a busy vision server ("503 request limit reached") clears in seconds
+                try:
+                    text, _ = await brain.complete(messages, max_tokens=max_tokens, temperature=0.2, model=model)
+                    break
+                except BrainError as e:
+                    if attempt == 2 or not (e.kind == "server" or "503" in str(e) or "502" in str(e)):
+                        raise
+                    log.info("%s is busy (%s); retrying", model, str(e)[:60])
+                    await asyncio.sleep(2 + 3 * attempt)
             if text.strip():
                 return text.strip()
         except BrainError as e:
+            if e.kind == "server" or "503" in str(e):
+                last = e
+                continue                         # still busy: the next vision model
+
             if e.kind in ("auth", "rate_limit", "connection"):
                 raise
             if not _refused(e):

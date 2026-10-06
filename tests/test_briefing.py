@@ -21,7 +21,7 @@ def test_parse_day():
     assert briefing._parse_day("yesterday").date() == (now - timedelta(days=1)).date()
     assert briefing._parse_day("2026-10-01").date().isoformat() == "2026-10-01"
     d = briefing._parse_day("last monday")
-    assert d.weekday() == 0 and 1 <= (now - d).days <= 7
+    assert d.weekday() == 0 and 1 <= (now.date() - d.date()).days <= 7
     assert briefing._parse_day("3 days ago").date() == (now - timedelta(days=3)).date()
     with pytest.raises(ToolError):
         briefing._parse_day("the day the music died")

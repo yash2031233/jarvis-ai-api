@@ -4,6 +4,7 @@ type, press keys, scroll, screenshot - and `look_at_screen` when a picture reall
 
 from __future__ import annotations
 
+import re
 import sys
 import time
 from typing import Any
@@ -286,17 +287,87 @@ def screenshot(window: str = "") -> dict:
     return {"path": str(p), "size": [int(img.shape[1]), int(img.shape[0])]}
 
 
-@tool(risk="low", timeout=120, tags=["look", "screen", "see", "picture", "chart", "image", "what does it look like"])
-async def look_at_screen(question: str = "", window: str = "") -> dict:
+AREAS = {"top": (0, 0, 1, .5), "bottom": (0, .5, 1, .5), "left": (0, 0, .5, 1), "right": (.5, 0, .5, 1),
+         "top-left": (0, 0, .5, .5), "top-right": (.5, 0, .5, .5), "bottom-left": (0, .5, .5, .5),
+         "bottom-right": (.5, .5, .5, .5), "center": (.25, .25, .5, .5), "centre": (.25, .25, .5, .5)}
+
+
+def _area(img: np.ndarray, area: str, ox: int, oy: int) -> tuple[np.ndarray, int, int]:
+    """Crop to part of the shot: a named area ('top-right', 'center'...) or 'x,y,w,h' in screen coordinates."""
+    a = (area or "").strip().lower().replace(" ", "-").replace("-half", "")
+    if not a or a in ("all", "full", "whole"):
+        return img, ox, oy
+    h, w = img.shape[:2]
+    if a in AREAS:
+        fx, fy, fw, fh = AREAS[a]
+        x, y, cw, ch = int(fx * w), int(fy * h), int(fw * w), int(fh * h)
+    else:
+        nums = [int(float(n)) for n in re.findall(r"-?\d+(?:\.\d+)?", a)]
+        if len(nums) != 4:
+            raise ToolError(f"Unknown area '{area}'.", hint="top, bottom, left, right, top-left, ..., center, or 'x,y,w,h'")
+        x, y, cw, ch = nums[0] - ox, nums[1] - oy, nums[2], nums[3]
+    x, y = max(0, min(w - 1, x)), max(0, min(h - 1, y))
+    crop = img[y:y + max(1, ch), x:x + max(1, cw)]
+    if crop.size == 0:
+        raise ToolError("That area is outside the screen.")
+    return crop, ox + x, oy + y
+
+
+@tool(risk="low", timeout=120, tags=["look", "screen", "see", "picture", "chart", "image", "what does it look like",
+                                    "zoom", "icon", "pixels"],
+      examples=["look_at_screen(question='Is the build green or red?', window='chrome')",
+                "look_at_screen(question='What does the small icon next to the clock show?', area='bottom-right')"])
+async def look_at_screen(question: str = "", window: str = "", area: str = "") -> dict:
     """Look at the screen (or one app's window, even behind others: `window`='chrome', 'claude'...) with the vision
-    model - for pictures, charts, layout and status that text alone can't capture. For text, read_screen is faster."""
+    model - pictures, charts, icons, colours, layout, status that text alone can't capture. Ask a specific `question`.
+    `area` zooms in at full resolution (top, bottom, left, right, top-left, top-right, bottom-left, bottom-right,
+    center, or 'x,y,w,h') - use it for small details: the whole screen is shrunk to fit. For plain text, read_screen
+    is faster; to click something you can only recognise by sight, point_at."""
     import asyncio
 
     from ..vision import see
 
-    img, _, _ = await asyncio.to_thread(grab, window)
+    img, ox, oy = await asyncio.to_thread(grab, window)
+    img, ox, oy = _area(img, area, ox, oy)
+    q = question or "Describe what's on the screen."
+    q += ("\n(Be specific and literal: read exact text and numbers, name colours, positions (top-left, ...) and "
+          "states (checked, greyed out, red badge...). Say so if something is too small or unclear to read.)")
     try:
-        ans = await see.ask([img], question or "Describe what's on the screen.", max_side=1600)
+        ans = await see.ask([img], q, max_side=1600)
     except see.NoVision as e:
         raise ToolError(str(e), hint="Use read_screen for text.")
-    return {"answer": ans}
+    out = {"answer": ans}
+    if not area and max(img.shape[:2]) > 1600:
+        out["note"] = "The whole screen was shrunk to fit - for small details look again with `area`."
+    return out
+
+
+@tool(risk="medium", timeout=150, tags=["click", "icon", "button", "find", "point", "where is", "see", "mouse"],
+      examples=["point_at(target='the gear (settings) icon', click=true)",
+                "point_at(target='the red record button', window='obs', click=true)"])
+async def point_at(target: str, window: str = "", click: bool = False, button: str = "left",
+                   double: bool = False) -> dict:
+    """Find something on screen BY SIGHT and get its screen coordinates (optionally click it) - icons, images, buttons
+    without readable text, a spot in a picture. Describe it plainly (shape, colour, where roughly). For anything with
+    readable text, click_text is faster and exact."""
+    import asyncio
+
+    from ..vision import pointing, see
+
+    if window:
+        await asyncio.to_thread(focus, window)
+        await asyncio.sleep(0.3)
+    img, ox, oy = await asyncio.to_thread(grab, window)
+    try:
+        hit = await pointing.locate(img, target)
+    except see.NoVision as e:
+        raise ToolError(str(e))
+    if hit is None:
+        raise ToolError(f"Couldn't see '{target}' on the screen.",
+                        hint="Describe it differently, or look_at_screen to check what's there.")
+    x, y = ox + hit[0], oy + hit[1]
+    out = {"x": x, "y": y}
+    if click:
+        await asyncio.to_thread(click_at, x, y, button, double)
+        out["clicked"] = True
+    return out
