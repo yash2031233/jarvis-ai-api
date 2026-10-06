@@ -43,6 +43,9 @@ def _path(title: str) -> Path:
 
 
 SYSTEM_NOTES = {LOG_NOTE, "Jarvis principles"}
+# where the memory keeper got to in THIS Jarvis's conversations. Its own name: other apps sharing the vault (Jarvis
+# v1 used ".jarvis-keeper.json" with its own message numbers) made this one think it had already read everything.
+KEEPER_FILE = ".jarvis-v2-keeper.json"
 
 
 def notes() -> list[str]:
@@ -202,10 +205,115 @@ def summary() -> list[dict[str, Any]]:
     return out
 
 
-def for_prompt(max_lines: int = 25) -> str:
-    """What goes into the system prompt: the 'About me' note (who the user is, preferences)."""
-    fs = facts(ABOUT_ME)
-    return "\n".join(f"- {_strip_date(f)}" for f in fs[-max_lines:])
+_cache: dict[str, tuple[float, str]] = {}
+
+
+def _text(title: str) -> str:
+    """A note's text (re-read only when the file changed)."""
+    p = _path(title)
+    try:
+        m = p.stat().st_mtime
+    except OSError:
+        return ""
+    hit = _cache.get(str(p))
+    if hit and hit[0] == m:
+        return hit[1]
+    try:
+        t = p.read_text("utf-8")
+    except OSError:
+        return ""
+    _cache[str(p)] = (m, t)
+    return t
+
+
+_FRONT = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.S)
+
+
+def _aliases(text: str) -> list[str]:
+    """Obsidian `aliases:` from a note's frontmatter (list or inline)."""
+    m = _FRONT.match(text)
+    if not m:
+        return []
+    fm = m.group(1)
+    inline = re.search(r"(?m)^aliases:\s*\[(.*?)\]", fm)
+    if inline:
+        return [a.strip(" '\"") for a in inline.group(1).split(",") if a.strip()]
+    block = re.search(r"(?ms)^aliases:\s*\n((?:\s+-\s*.+\n?)+)", fm)
+    return [a.strip(" -'\"") for a in block.group(1).splitlines() if a.strip()] if block else []
+
+
+def _body(text: str, limit: int) -> str:
+    """A note without its frontmatter, blank lines squeezed, cut to `limit` characters."""
+    t = re.sub(r"\n{3,}", "\n\n", _FRONT.sub("", text, count=1)).strip()
+    return t if len(t) <= limit else t[:limit].rsplit("\n", 1)[0] + "\n…"
+
+
+def profile_notes() -> list[str]:
+    """The notes about the user themself, for every request: 'About me', the note named after them (or with the alias
+    'me' / 'the user'), and their preferences / how they talk / memory rules."""
+    name = (config.store.load().user_name or "").strip()
+    want = [ABOUT_ME, name, "Preferences", f"How {name} talks" if name else "", "Memory rules"]
+    have = {n.lower(): n for n in user_notes()}
+    out = [have[w.lower()] for w in want if w and w.lower() in have]
+    for n in user_notes():
+        if n not in out and "the user" in {a.lower() for a in _aliases(_text(n))}:
+            out.append(n)
+    return out[:6]
+
+
+def for_prompt(max_lines: int = 25, max_chars: int = 3500) -> str:
+    """What goes into every system prompt: the user's profile notes (who they are, how they like things done)."""
+    parts, used = [], 0
+    for n in profile_notes():
+        body = _body(_text(n), 1400)
+        if not body or used + len(body) > max_chars:
+            continue
+        parts.append(f"[{n}]\n{body}")
+        used += len(body)
+    if not parts:
+        fs = facts(ABOUT_ME)
+        return "\n".join(f"- {_strip_date(f)}" for f in fs[-max_lines:])
+    return "\n\n".join(parts)
+
+
+def relevant(text: str, limit: int = 3, max_chars: int = 2400) -> str:
+    """The notes this request is about (by title, alias or matching facts) - so 'how's the robot car wired?' brings in
+    the Robot car note without having to search for it."""
+    q = (text or "").lower()
+    if len(q) < 4:
+        return ""
+    skip = set(profile_notes()) | SYSTEM_NOTES
+    words = {w for w in re.findall(r"[a-z0-9]+", q) if len(w) > 2}
+    scored = []
+    for n in user_notes():
+        if n in skip:
+            continue
+        t = _text(n)
+        names = [n] + _aliases(t)
+        s = 0.0
+        for nm in names:
+            nl = nm.lower().strip()
+            if len(nl) < 3:
+                continue
+            if re.search(rf"\b{re.escape(nl)}\b", q):
+                s = max(s, 100 + len(nl))                       # named in the request ("robot car", "3D printer")
+            else:
+                nw = {w for w in re.findall(r"[a-z0-9]+", nl) if len(w) > 2}
+                if nw and len(nw & words) == len(nw):
+                    s = max(s, 80)
+                elif fuzz.partial_ratio(nl, q) >= 92 and len(nl) > 4:
+                    s = max(s, 70)
+        if s:
+            scored.append((s, n, t))
+    scored.sort(key=lambda r: -r[0])
+    parts, used = [], 0
+    for _s, n, t in scored[:limit]:
+        body = _body(t, 1200)
+        if used + len(body) > max_chars:
+            break
+        parts.append(f"[{n}]\n{body}")
+        used += len(body)
+    return "\n\n".join(parts)
 
 
 def _strip_date(f: str) -> str:
@@ -223,7 +331,7 @@ def _log(line: str) -> None:
 # ------------------------------------------------------------------ memory keeper state
 def keeper_state() -> dict[str, Any]:
     try:
-        return json.loads((root() / ".jarvis-keeper.json").read_text("utf-8"))
+        return json.loads((root() / KEEPER_FILE).read_text("utf-8"))
     except Exception:
         return {}
 
@@ -231,4 +339,4 @@ def keeper_state() -> dict[str, Any]:
 def save_keeper_state(**kw: Any) -> None:
     s = keeper_state()
     s.update(kw)
-    (root() / ".jarvis-keeper.json").write_text(json.dumps(s), "utf-8")
+    (root() / KEEPER_FILE).write_text(json.dumps(s), "utf-8")

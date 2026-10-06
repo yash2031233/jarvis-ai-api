@@ -217,7 +217,11 @@ class Agent:
             parts.append(f"The user's name is {s.user_name}.")
         facts = memory.facts_for_prompt()
         if facts:
-            parts.append("Things you know about the user:\n" + facts)
+            parts.append("## About the user (from their notes)\n" + facts)
+        related = memory.notes_for_request(text)
+        if related:
+            parts.append("## Notes about what they're asking (from their notes vault - use these, they're current)\n"
+                         + related)
         lessons = learning.for_prompt()
         if lessons:
             parts.append("## Lessons from experience (follow these)\n" + lessons)

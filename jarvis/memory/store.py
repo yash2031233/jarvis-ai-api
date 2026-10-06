@@ -106,6 +106,14 @@ class Memory:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def notes_for_request(self, text: str) -> str:
+        from . import vault
+
+        try:
+            return vault.relevant(text)
+        except Exception:
+            return ""
+
     def facts_for_prompt(self, limit: int = 25) -> str:
         from . import vault
 
