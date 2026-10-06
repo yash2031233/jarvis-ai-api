@@ -36,3 +36,26 @@ def test_grid_answers_are_parsed():
     assert pointing.parse_cell("Looking at C1... no, it's E6", 8, 6) == (4, 5)
     assert pointing.parse_cell("NONE", 8, 6) is None
     assert pointing.parse_cell("Z9", 8, 6) is None
+
+
+def test_unlabelled_controls_get_backup_names():
+    plus = _el(1, "Button", "")
+    plus.rect = (110, 180, 33, 36)
+    label = _el(2, "Text", "Quantity")
+    label.rect = (38, 190, 60, 18)
+    gear = _el(3, "Button", "⚙")
+    gear.help = "Settings"
+    fake = _el(4, "Group", "")
+    fake.aid = "checkout-btn"
+    els = [plus, label, gear, fake]
+    uia.backup_names(els)
+    assert uia.best(els, "the + next to Quantity")[0] is plus      # the control, not the word beside it
+    assert uia.best(els, "Settings")[0] is gear                      # from its tooltip
+    assert uia.best(els, "checkout")[0] is fake                      # from its HTML id
+    assert uia._readable("qty-plus") == "qty plus" and uia._readable("css-1x9ab3f") == ""
+
+
+def test_icon_descriptions_are_attached_by_number():
+    a, b = _el(1, "Button", ""), _el(2, "Button", "")
+    assert uia.apply_icon_names([a, b], "1: trash can delete\n2: settings gear") == 2
+    assert uia.best([a, b], "trash can icon")[0] is a
