@@ -63,6 +63,7 @@ class Settings(BaseModel):
     model: str = ""
     temperature: float = 0.4
     searxng_url: str = ""          # your own SearXNG search server (optional; else Brave key / Bing / DuckDuckGo)
+    provider_wait_min: int = 30     # model provider overloaded / down: keep checking this long, then continue the task
     fallback_model: str = ""        # used when the main model's servers are overloaded / down ("" = none)
     vision_model: str = ""          # for looking at images (car, cameras, screen); "" = auto: the main model if it can see, else one from the same provider
     max_tokens: int = 2048

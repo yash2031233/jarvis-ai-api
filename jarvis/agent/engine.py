@@ -435,8 +435,10 @@ class Agent:
         return {
             "auth": str(e),
             "model": str(e),
-            "rate_limit": "The model provider is rate limiting me. Give it a moment and try again.",
+            "rate_limit": "The model provider is still rate limiting me. Give it a moment and try again.",
             "connection": "I can't reach the model provider right now. Check your internet connection.",
+            "server": f"{e} The model's servers are overloaded on NVIDIA's side - try again in a bit, or set a backup "
+                      "model in Settings.",
         }.get(e.kind, f"The model returned an error: {e}")
 
 

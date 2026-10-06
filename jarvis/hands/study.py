@@ -137,7 +137,7 @@ async def study(action: str, deck: str = "", topic: str = "", material: str = ""
 
             user = (f"Topic: {topic}\n" if topic else "") + (f"Material:\n{src[:18000]}" if src else
                                                               "Use your own knowledge of the topic.")
-            text, _ = await brain.complete([{"role": "system", "content": MAKE_SYSTEM.format(n=n)},
+            text, _ = await brain.complete(patience=None, messages=[{"role": "system", "content": MAKE_SYSTEM.format(n=n)},
                                             {"role": "user", "content": user}], max_tokens=min(6000, 350 * n + 400))
             try:
                 j = loads_lenient(text[text.find("{"):])

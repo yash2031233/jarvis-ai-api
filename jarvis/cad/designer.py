@@ -157,7 +157,7 @@ async def _ask_code(messages: list[dict[str, str]]) -> str:
     max_tokens = 5000
     last = ""
     for i in range(3):
-        text, finish = await brain.complete(messages, max_tokens=max_tokens, temperature=0.2 + 0.1 * i)
+        text, finish = await brain.complete(messages, max_tokens=max_tokens, temperature=0.2 + 0.1 * i, patience=None)
         if finish == "length":
             max_tokens = min(max_tokens * 2, 12000)
         code = _clean_code(text)

@@ -152,11 +152,15 @@ class Brain:
         elif tools and not native:
             req_messages = _inject_react(messages, tools)
 
-        for attempt in range(5):
+        waiter = ProviderWait(model, patience=max(0, s.provider_wait_min) * 60, cancel=cancel)
+        attempt = 0
+        while True:
             try:
-                return await self._stream_once(
+                out = await self._stream_once(
                     model, req_messages, kwargs, known, s, on_text, on_tool_call, cancel
                 )
+                waiter.back()
+                return out
             except BrainError as e:
                 if e.kind == "tools_unsupported" and native and tools:
                     log.info("model %s rejected native tools; switching to text tool calling", model)
@@ -174,18 +178,19 @@ class Brain:
                     bus.emit("notice", level="warn", text=f"{model.split('/')[-1]} is overloaded - using {fb.split('/')[-1]} for now")
                     log.info("%s failed (%s); falling back to %s", model, e, fb)
                     model = fb
+                    waiter.model = fb
                     continue
-                if e.kind in ("rate_limit", "connection", "server") and attempt < 4:
-                    delay = min(20.0, (2**attempt) + random.random())
+                if await waiter.again(e, attempt):
+                    attempt += 1
+                    continue
+                if waiter.waiting:
                     from ..events import bus
 
-                    bus.emit("notice", level="warn",
-                             text=f"{'Rate limited' if e.kind == 'rate_limit' else 'Connection issue'}"
-                                  f" — retrying in {delay:.0f}s")
-                    await asyncio.sleep(delay)
-                    continue
+                    bus.emit("provider_wait", on=False, model=model)
+                    if cancel is None or not cancel.is_set():
+                        raise BrainError(f"{model.split('/')[-1]} stayed unavailable for {s.provider_wait_min} min, "
+                                         "so I stopped waiting.", e.kind) from e
                 raise
-        raise BrainError("Model did not respond after several retries.", "connection")
 
     async def _stream_once(self, model, messages, kwargs, known, s, on_text, on_tool_call, cancel):
         try:
@@ -290,12 +295,16 @@ class Brain:
 
     # ------------------------------------------------------------- one-shot completion
     async def complete(self, messages: list[dict[str, Any]], max_tokens: int = 4000, temperature: float = 0.2,
-                       think: bool = False, model: str | None = None) -> tuple[str, str | None]:
+                       think: bool = False, model: str | None = None, patience: float | None = 0.0) -> tuple[str, str | None]:
         """Non-streaming call for internal jobs (e.g. writing OpenSCAD). Returns (text, finish_reason).
 
         The model runs as it's configured - its reasoning is never switched off or turned down here.
         """
-        for attempt in range(4):
+        if patience is None:
+            patience = max(0, config.store.load().provider_wait_min) * 60
+        waiter = ProviderWait(model or self.model(), patience=patience)
+        attempt = 0
+        while True:
             try:
                 r = await self.client().chat.completions.create(
                     model=model or self.model(), messages=messages, max_tokens=max_tokens, temperature=temperature,
@@ -303,6 +312,7 @@ class Brain:
                 )
                 ch = r.choices[0]
                 text = re.sub(r"<think>.*?</think>", "", ch.message.content or "", flags=re.S).strip()
+                waiter.back()
                 return text, ch.finish_reason
             except Exception as e:
                 err = self._wrap(e)
@@ -311,12 +321,16 @@ class Brain:
                         and (model is None or model == self.model()):
                     log.info("%s failed (%s); falling back to %s", model or self.model(), err, fb)
                     model = fb                         # the main model is overloaded: the backup does this one
+                    waiter.model = fb
                     continue
-                if err.kind in ("rate_limit", "connection", "server") and attempt < 3:
-                    await asyncio.sleep(min(15.0, 2 ** attempt + random.random()))
+                if await waiter.again(err, attempt):
+                    attempt += 1
                     continue
+                if waiter.waiting:
+                    from ..events import bus
+
+                    bus.emit("provider_wait", on=False, model=waiter.model)
                 raise err from e
-        raise BrainError("Model did not respond after several retries.", "connection")
 
     # ------------------------------------------------------------- errors
     @staticmethod
@@ -343,6 +357,69 @@ class Brain:
                 return BrainError(f"Provider error {code}.", "server")
             return BrainError(f"Provider error {code}: {body[:300]}", "error")
         return BrainError(str(e) or e.__class__.__name__, "error")
+
+
+class ProviderWait:
+    """Overloaded / unreachable provider: a few quick retries, then - if this task can wait - keep checking with
+    growing gaps until it answers again, and carry on with the same request. Says so once when it starts waiting and
+    once when it's back. Gives up after `patience` seconds, or at once when the task is cancelled."""
+
+    QUICK = 3
+
+    def __init__(self, model: str, patience: float = 0.0, cancel: asyncio.Event | None = None) -> None:
+        self.model, self.patience, self.cancel = model, patience, cancel
+        self.t0: float | None = None
+        self.waiting = False
+
+    async def again(self, err: "BrainError", attempt: int) -> bool:
+        """Sleep before the next try; False = stop trying (out of patience, cancelled, or not a passing problem)."""
+        import time
+
+        from ..events import bus
+
+        if err.kind not in ("rate_limit", "connection", "server"):
+            return False
+        if self.t0 is None:
+            self.t0 = time.monotonic()
+        if attempt < self.QUICK:
+            delay = min(8.0, 2 ** attempt + random.random())
+        else:
+            if self.patience <= 0 or time.monotonic() - self.t0 > self.patience:
+                return False
+            if not self.waiting:
+                self.waiting = True
+                name = self.model.split("/")[-1]
+                what = "is rate limiting me" if err.kind == "rate_limit" else (
+                    "isn't reachable" if err.kind == "connection" else "is overloaded on NVIDIA's side")
+                bus.emit("notice", level="warn", text=f"{name} {what} - I'll keep checking and carry on as soon as "
+                                                      "it's back. Say stop to cancel.")
+                bus.emit("provider_wait", on=True, model=self.model, reason=err.kind)
+                log.info("%s unavailable (%s); waiting for it to come back", self.model, err)
+            delay = min(60.0, 10.0 * (attempt - self.QUICK + 1)) + random.random() * 3
+        await self.nap(delay)
+        return not (self.cancel is not None and self.cancel.is_set())
+
+    async def nap(self, seconds: float) -> None:
+        """Sleep, but wake up at once when the task is cancelled ("stop")."""
+        if self.cancel is None:
+            await asyncio.sleep(seconds)
+            return
+        try:
+            await asyncio.wait_for(self.cancel.wait(), seconds)
+        except asyncio.TimeoutError:
+            pass
+
+    def back(self) -> None:
+        if self.waiting:
+            import time
+
+            from ..events import bus
+
+            mins = (time.monotonic() - (self.t0 or time.monotonic())) / 60
+            bus.emit("notice", level="info", text=f"{self.model.split('/')[-1]} is back"
+                                                  f"{f' after {mins:.0f} min' if mins >= 1 else ''} - continuing.")
+            bus.emit("provider_wait", on=False, model=self.model)
+            self.waiting = False
 
 
 def _inject_react(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
