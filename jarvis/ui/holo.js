@@ -6,13 +6,17 @@
 //   pinch-drag elsewhere          scroll the list under your fingers
 //   open palm, swipe              close the screen that's open (or open the conversation history)
 //   open palm, held still         stop: cuts Jarvis off mid-sentence / stops what he's doing
+// Air mouse (Settings → Hand control): the hand drives the REAL mouse in every app - pinch = click / drag, middle-
+// finger pinch = right click, fist + move = scroll (the server moves the cursor: hands/air.py).
+// Gesture shortcuts: hold 👍 👎 ✌️ 🤘 three-fingers or 🤙 still for a moment and it runs what's set for it.
 // Turn it on with the hand button in the top bar, by asking Jarvis, or press Esc to turn it off.
 const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const EDGES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13],
   [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 
-export function createHolo({ toast, stop: stopJarvis }) {
+export function createHolo({ toast, stop: stopJarvis, send = () => {}, settings = () => ({}) }) {
+  const airOn = () => !!(settings() || {}).air_mouse;
   const body = document.body;
   const H = { on: false, starting: false };
   let video, stream, landmarker, cv, ctx, raf = 0, lastVideoT = -1;
@@ -38,7 +42,9 @@ export function createHolo({ toast, stop: stopJarvis }) {
       cv = document.createElement("canvas"); cv.id = "holo"; body.appendChild(cv); ctx = cv.getContext("2d");
       size(); addEventListener("resize", size);
       H.on = true; body.classList.add("holoOn");
-      toast("Hand control on · pinch = grab / tap · pinch-drag = scroll · palm swipe = close · palm still = stop · Esc to exit", "info", 7000);
+      clearInterval(bgTimer); bgTimer = setInterval(bgLoop, 33);
+      toast(airOn() ? "Hand control on · AIR MOUSE: pinch = click/drag · middle pinch = right click · fist = scroll · hold 👍 ✌️ 🤘 🤙 for shortcuts · Esc to exit"
+        : "Hand control on · pinch = grab / tap · pinch-drag = scroll · palm swipe = close · palm still = stop · hold 👍 ✌️ 🤘 🤙 for shortcuts · Esc to exit", "info", 8000);
       loop();
     } catch (e) {
       stop();
@@ -47,7 +53,8 @@ export function createHolo({ toast, stop: stopJarvis }) {
   }
   function stop() {
     H.on = false; body.classList.remove("holoOn");
-    cancelAnimationFrame(raf);
+    cancelAnimationFrame(raf); clearInterval(bgTimer);
+    send({ type: "air", ev: "release" });
     for (const h of hands) release(h);
     hands.length = 0;
     if (stream) stream.getTracks().forEach((t) => t.stop());
@@ -65,13 +72,22 @@ export function createHolo({ toast, stop: stopJarvis }) {
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const extended = (lm, tip, pip) => dist(lm[tip], lm[0]) > dist(lm[pip], lm[0]) * 1.12;
 
-  function loop() {
-    raf = requestAnimationFrame(loop);
+  let lastStep = 0, bgTimer = 0;
+  function step() {
+    lastStep = performance.now();
     if (!landmarker || video.readyState < 2 || video.currentTime === lastVideoT) return;
     lastVideoT = video.currentTime;
     process(landmarker.detectForVideo(video, performance.now()).landmarks || []);
   }
+  function loop() {
+    raf = requestAnimationFrame(loop);
+    step();
+  }
+  // the window covered or minimized: animation frames stop, a timer keeps the air mouse alive
+  function bgLoop() { if (H.on && performance.now() - lastStep > 120) step(); }
+  let airPrimary = null;                            // the hand driving the mouse this frame (the first one seen)
   function process(found) {
+    airPrimary = null;
     const next = found.map((lm) => {               // keep each pinch with its own hand (nearest wrist)
       const w = toScreen(lm[0]);
       let best = null, bd = 1e9;
@@ -89,16 +105,101 @@ export function createHolo({ toast, stop: stopJarvis }) {
     h.pts = h.pts ? h.pts.map((p, i) => [p[0] + (raw[i][0] - p[0]) * 0.55, p[1] + (raw[i][1] - p[1]) * 0.55]) : raw;
     h.wrist = h.pts[0];
     const scale = dist(lm[0], lm[9]) || 0.1, pinchD = dist(lm[4], lm[8]) / scale, was = h.pinch;
-    h.pinch = was ? pinchD < 0.5 : pinchD < 0.32;                  // hysteresis: no flicker at the threshold
+    const fistLike = [[8, 6], [12, 10], [16, 14], [20, 18]].every(([tip, pip]) => dist(lm[tip], lm[0]) < dist(lm[pip], lm[0]) * 1.02);
+    const midD = dist(lm[4], lm[12]) / scale;
+    h.midPinch = !fistLike && midD < 0.3 && midD < pinchD * 0.85;     // thumb on the MIDDLE finger (right click)
+    h.pinch = !fistLike && !h.midPinch && (was ? pinchD < 0.5 : pinchD < 0.32);   // hysteresis; a fist isn't a pinch
     h.cursor = [(h.pts[4][0] + h.pts[8][0]) / 2, (h.pts[4][1] + h.pts[8][1]) / 2];
     h.palm = !h.pinch && [[8, 6], [12, 10], [16, 14], [20, 18]].every(([a, b]) => extended(lm, a, b));
     h.hist.push([t, h.cursor[0], h.cursor[1]]); h.hist = h.hist.filter((q) => t - q[0] < 350);
-    if (!was && h.pinch) pinchStart(h);
-    else if (was && h.pinch) pinchMove(h);
-    else if (was && !h.pinch) pinchEnd(h);
-    else hover(h);
+    h.pose = h.pinch ? null : pose(lm);
+    if (airOn() && (airPrimary === null || airPrimary === h)) { airPrimary = h; airMouse(h, lm, t, scale); }
+    else {
+      if (h.airDown) { h.airDown = false; send({ type: "air", ev: "up", button: "left" }); }
+      if (!was && h.pinch) pinchStart(h);
+      else if (was && h.pinch) pinchMove(h);
+      else if (was && !h.pinch) pinchEnd(h);
+      else hover(h);
+    }
+    holdPose(h, t);
     palmGestures(h, t);
     return h;
+  }
+
+  // ---- hand poses (for the shortcuts; a fist also scrolls in air-mouse mode)
+  const folded = (lm, tip, pip) => dist(lm[tip], lm[0]) < dist(lm[pip], lm[0]) * 1.02;
+  function pose(lm) {
+    const s = dist(lm[0], lm[9]) || 0.1;
+    const I = extended(lm, 8, 6), M = extended(lm, 12, 10), R = extended(lm, 16, 14), P = extended(lm, 20, 18);
+    const fI = folded(lm, 8, 6), fM = folded(lm, 12, 10), fR = folded(lm, 16, 14), fP = folded(lm, 20, 18);
+    const thumbOut = dist(lm[4], lm[5]) / s > 0.55 && dist(lm[4], lm[13]) / s > 0.75;
+    if (fI && fM && fR && fP) {
+      if (!thumbOut) return "fist";
+      if (lm[4].y < lm[5].y - 0.35 * s && lm[4].y < lm[3].y) return "thumbs_up";
+      if (lm[4].y > lm[17].y + 0.35 * s && lm[4].y > lm[3].y) return "thumbs_down";
+      return null;
+    }
+    if (I && M && fR && fP) return "peace";
+    if (I && fM && fR && P) return "rock";
+    if (I && M && R && fP && !thumbOut) return "three";
+    if (fI && fM && fR && P && thumbOut) return "shaka";
+    return null;
+  }
+  const POSE_ICON = { thumbs_up: "👍", thumbs_down: "👎", peace: "✌️", rock: "🤘", three: "🖐 3", shaka: "🤙" };
+  let lastFire = 0;
+  function holdPose(h, t) {
+    const p = h.pose && h.pose !== "fist" ? h.pose : null;
+    if (p !== h.held) { h.held = p; h.heldSince = t; h.fired = false; return; }
+    if (!p || h.fired) return;
+    const hs = h.hist, still = hs.length > 2 && Math.hypot(hs[hs.length - 1][1] - hs[0][1], hs[hs.length - 1][2] - hs[0][2]) < 45;
+    if (!still) { h.heldSince = t; return; }
+    h.holdK = Math.min(1, (t - h.heldSince) / 700);
+    if (h.holdK >= 1 && t - lastFire > 900) {
+      h.fired = true; lastFire = t;
+      flash(h.pts[9], 40, true);
+      send({ type: "gesture", name: p });
+    }
+  }
+
+  // ---- air mouse: smoothed (One Euro filter - steady when still, quick when moving), a box in the middle of the
+  // camera view covers every monitor, the point between thumb and index stays put while you pinch
+  function euro(st, x, t, minCut = 1.0, beta = 18) {
+    if (!st.t) { Object.assign(st, { t, x, dx: 0 }); return x; }
+    const dt = Math.max(1e-3, (t - st.t) / 1000), a = (c) => 1 / (1 + 1 / (2 * Math.PI * c * dt));
+    const dx = (x - st.x) / dt, edx = st.dx + a(1.0) * (dx - st.dx);
+    const cut = minCut + beta * Math.abs(edx), out = st.x + a(cut) * (x - st.x);
+    Object.assign(st, { t, x: out, dx: edx });
+    return out;
+  }
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  function airMouse(h, lm, t, s) {
+    h.fx = h.fx || {}; h.fy = h.fy || {};
+    const mx = 1 - (lm[4].x + lm[8].x) / 2, my = (lm[4].y + lm[8].y) / 2;
+    const x = euro(h.fx, clamp01((mx - 0.2) / 0.6), t), y = euro(h.fy, clamp01((my - 0.15) / 0.55), t);
+    h.air = [x, y];
+    if (h.pose === "fist") {                                   // grab the page: move up / down to scroll
+      if (h.fistY != null) {
+        h.scrollAcc = (h.scrollAcc || 0) + (h.fistY - lm[0].y) / s * 10;
+        const n = Math.trunc(h.scrollAcc);
+        if (n) { h.scrollAcc -= n; send({ type: "air", ev: "scroll", notches: n }); }
+      }
+      h.fistY = lm[0].y;
+      return;
+    }
+    h.fistY = null; h.scrollAcc = 0;
+    if (h.pinch && !h.airDown) {
+      h.airDown = true; h.lockUntil = t + 170;                // hold still a moment: a click, not a tiny drag
+      send({ type: "air", ev: "down", button: "left", x, y }); flash(h.cursor, 16);
+      return;
+    }
+    if (!h.pinch && h.airDown) { h.airDown = false; send({ type: "air", ev: "up", button: "left", x, y }); return; }
+    const right = h.midPinch;
+    if (right && !h.rightOn) { h.rightOn = true; send({ type: "air", ev: "click", button: "right", x, y }); flash(h.cursor, 22, true); return; }
+    if (!right) h.rightOn = false;
+    if (t < (h.lockUntil || 0)) return;
+    if (!h.sent || Math.abs(x - h.sent[0]) + Math.abs(y - h.sent[1]) > 0.0006) {
+      h.sent = [x, y]; send({ type: "air", ev: "move", x, y });
+    }
   }
 
   const orbCanvas = () => document.getElementById("orb");
@@ -128,7 +229,11 @@ export function createHolo({ toast, stop: stopJarvis }) {
     else if (h.mode === "tap" && performance.now() - h.t0 < 450 && h.moved < 40) tap(h);
     h.mode = null; h.last = null; h.scroller = null;
   }
-  function release(h) { if (h.pinch && h.mode === "orb") ptr("pointerup", h, orbCanvas()); h.pinch = false; }
+  function release(h) {
+    if (h.pinch && h.mode === "orb") ptr("pointerup", h, orbCanvas());
+    if (h.airDown) { h.airDown = false; send({ type: "air", ev: "up", button: "left" }); }
+    h.pinch = false;
+  }
   function tap(h) {
     const el = h.target && (h.target.closest("button, a, [role=button], .hits li, .tc, input, textarea, select, label, summary") || h.target);
     if (!el || el === body || el === document.documentElement || el === orbCanvas()) return;
@@ -204,6 +309,12 @@ export function createHolo({ toast, stop: stopJarvis }) {
         ctx.fillStyle = c(tip ? 0.95 : 0.6); ctx.beginPath(); ctx.arc(x, y, tip ? 4.5 : 3, 0, 6.283); ctx.fill();
         if (tip) { ctx.fillStyle = c(0.12); ctx.beginPath(); ctx.arc(x, y, 14, 0, 6.283); ctx.fill(); }
       });
+      if (h.held && h.holdK > 0.05 && !h.fired) {
+        ctx.strokeStyle = c(0.9); ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(P[9][0], P[9][1], 54, -Math.PI / 2, -Math.PI / 2 + 6.283 * h.holdK); ctx.stroke();
+        ctx.fillStyle = c(0.95); ctx.font = "600 22px system-ui"; ctx.textAlign = "center";
+        ctx.fillText(POSE_ICON[h.held] || "", P[9][0], P[9][1] - 66); ctx.textAlign = "start";
+      }
       const [x, y] = h.cursor, k = h.pinch ? 1 : 0.35;
       ctx.strokeStyle = c(0.9); ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(x, y, h.pinch ? 10 : 18, 0, 6.283 * k); ctx.stroke();
@@ -218,6 +329,10 @@ export function createHolo({ toast, stop: stopJarvis }) {
       for (let i = 1; i < 12; i++) { const f = i / 12; ctx.lineTo(a[0] + (b[0] - a[0]) * f + (Math.random() - 0.5) * 10, a[1] + (b[1] - a[1]) * f + (Math.random() - 0.5) * 10); }
       ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
+    if (airOn()) {
+      ctx.fillStyle = c(0.9); ctx.font = "700 12px ui-monospace, monospace";
+      ctx.fillText("AIR MOUSE · pinch = click · middle pinch = right click · fist = scroll", 14, innerHeight - 14);
+    }
     const now = performance.now();
     for (let i = flashes.length - 1; i >= 0; i--) {
       const f = flashes[i], age = (now - f.t) / 450;
@@ -230,6 +345,7 @@ export function createHolo({ toast, stop: stopJarvis }) {
 
   // for testing without a camera: feed landmark sets straight in (the same path the camera's go through)
   const feed = (lms) => { if (!cv) { cv = document.createElement("canvas"); cv.id = "holo"; body.appendChild(cv); ctx = cv.getContext("2d"); size(); }
-    process(lms); return hands.map((h) => ({ pinch: h.pinch, palm: h.palm, mode: h.mode, cursor: h.cursor.map(Math.round) })); };
+    process(lms); return hands.map((h) => ({ pinch: h.pinch, palm: h.palm, mode: h.mode, pose: h.pose, held: h.held,
+      fired: h.fired, air: h.air, cursor: h.cursor.map(Math.round) })); };
   return { start, stop, toggle, feed, get on() { return H.on; } };
 }

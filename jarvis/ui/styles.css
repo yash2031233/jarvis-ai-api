@@ -570,3 +570,10 @@ body.navOn[data-mode="map"] #mapView { right: 0 !important; }
 body.mapFull[data-mode="map"] #convo { display: none; }
 body.mapFull[data-mode="map"] #mapView { right: 0; bottom: 0; }
 body.mapFull .mapBtns #mapFull { color: var(--accent); border-color: var(--line-strong); }
+
+/* Settings → hand control */
+.gesture-list { display: grid; gap: 6px; }
+.gesture-row { align-items: center; gap: 8px; }
+.gesture-row span { min-width: 140px; }
+.gesture-row select { flex: 0 0 170px; }
+.gesture-row input { flex: 1; min-width: 0; }

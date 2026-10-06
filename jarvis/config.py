@@ -82,6 +82,8 @@ class Settings(BaseModel):
     mic_device: int | None = None
     speaker_device: str = ""        # output device name ("" = the system default)
     hotkey: str = "ctrl+space"
+    air_mouse: bool = False        # hand control moves the real mouse in every app (pinch = click, fist = scroll)
+    gestures: dict[str, str] = {}  # pose -> action for hand control (empty = the defaults, see hands/air.py)
 
     # CAD (OpenSCAD)
     openscad_path: str = ""          # empty = auto-detect

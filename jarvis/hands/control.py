@@ -14,6 +14,7 @@ from .registry import ToolError, tool
 # and secrets (API keys, camera passwords, bot token) are deliberately not here - those stay in Settings.
 SETTABLE: dict[str, str] = {
     "user_name": "what Jarvis calls you",
+    "air_mouse": "hand control moves the real mouse in every app (true/false)",
     "personality": "Jarvis's personality / how he talks",
     "provider": "model provider: nvidia | lmstudio | ollama | custom",
     "model": "the model id to use",

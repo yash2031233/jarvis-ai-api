@@ -210,6 +210,11 @@ def main() -> None:
     try:
         import webview
 
+        # keep the page running when the window is covered or minimized: hand control (the air mouse) runs in it
+        os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                              "--disable-features=ElasticOverscroll,CalculateNativeWinOcclusion "
+                              "--disable-background-timer-throttling --disable-renderer-backgrounding "
+                              "--disable-backgrounding-occluded-windows")
         win_api = WindowApi()
         window = webview.create_window(
             "J.A.R.V.I.S.", url, width=1100, height=820, min_size=(520, 600),

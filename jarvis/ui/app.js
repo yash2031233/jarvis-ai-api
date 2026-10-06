@@ -166,6 +166,7 @@ function handle(ev) {
       voiceStatus = ev.voice_status;
       updateMic();
       if (!ev.model || (!ev.key_set && !ev.local)) openSettings(true);
+      else api("/api/settings").then((d) => { settings = d.settings; }).catch(() => {});   // air mouse, map units...
       model.restore();
       break;
     case "model": model.show(ev); break;
@@ -196,6 +197,7 @@ ${ev.result}`);
     case "map": { const { type, ...m } = ev; mapview.show({ ...m, units: settings && settings.nav_units, voice: settings ? settings.nav_voice : true }); break; }
     case "geo": mapview.geo(ev); break;
     case "ui_open": openPanel(ev.panel); break;
+    case "gesture": toast(`${ev.label} → ${ev.did}`, "info", 2500); break;
     case "settings_changed":
       api("/api/settings").then((d) => { settings = d.settings; if (!$("settings").classList.contains("hidden")) openSettings(); }).catch(() => {});
       break;
@@ -389,8 +391,38 @@ async function openSettings(onboarding = false) {
   loadCameras();
   loadUndo();
   loadDevices();
+  renderGestures();
   if (data.key_set || settings.provider === "ollama") loadModels(false);
 }
+
+// ------------------------------------------------------------------ Settings → hand control
+const GESTURES = { thumbs_up: "👍 Thumbs up", thumbs_down: "👎 Thumbs down", peace: "✌️ Peace", rock: "🤘 Rock",
+  three: "🖐 Three fingers", shaka: "🤙 Shaka" };
+const GESTURE_DEFAULTS = { thumbs_up: "play_pause", thumbs_down: "mute", peace: "screenshot", rock: "next_track",
+  three: "prev_track", shaka: "talk" };
+const GESTURE_ACTIONS = { none: "Nothing", play_pause: "Play / pause", next_track: "Next track", prev_track: "Previous track",
+  mute: "Mute / unmute", volume_up: "Volume up", volume_down: "Volume down", screenshot: "Screenshot",
+  show_desktop: "Show desktop", switch_window: "Switch window", talk: "Start listening", custom: "Say a command…" };
+function renderGestures() {
+  const s = settings || {}, set = { ...GESTURE_DEFAULTS, ...(s.gestures || {}) };
+  $("sAirMouse").checked = !!s.air_mouse;
+  $("gestureList").replaceChildren(...Object.entries(GESTURES).map(([g, label]) => {
+    const cur = set[g] || "none", custom = !(cur in GESTURE_ACTIONS);
+    const row = document.createElement("div"); row.className = "row gesture-row";
+    const name = document.createElement("span"); name.textContent = label;
+    const sel = document.createElement("select");
+    sel.append(...Object.entries(GESTURE_ACTIONS).map(([k, v]) => new Option(v, k)));
+    sel.value = custom ? "custom" : cur;
+    const txt = document.createElement("input"); txt.type = "text"; txt.placeholder = "e.g. open spotify";
+    txt.value = custom ? cur.replace(/^say:\s*/i, "") : ""; txt.classList.toggle("hidden", !custom);
+    const store = (v) => save({ gestures: { ...(settings.gestures || {}), [g]: v } });
+    sel.onchange = () => { txt.classList.toggle("hidden", sel.value !== "custom"); if (sel.value !== "custom") store(sel.value); else txt.focus(); };
+    txt.onchange = () => { if (txt.value.trim()) store("say: " + txt.value.trim()); };
+    row.append(name, sel, txt);
+    return row;
+  }));
+}
+$("sAirMouse").addEventListener("change", () => save({ air_mouse: $("sAirMouse").checked }));
 
 function fillSettings(data) {
   const s = data.settings;
@@ -1051,7 +1083,9 @@ const hub = createHub({
   openMap: () => mapview.open(),
 });
 $("btnHub").addEventListener("click", () => (hub.isOpen ? hub.close() : hub.open()));
-const holo = createHolo({ toast: (...a) => toast(...a), stop: () => { if (phone) phone.stop(); send({ type: "cancel" }); } });
+const holo = createHolo({ toast: (...a) => toast(...a), stop: () => { if (phone) phone.stop(); send({ type: "cancel" }); },
+  send: (m) => send(m), settings: () => settings });
+window.jarvis.holo = holo;                       // for poking at hand control from the dev console
 $("btnHands").addEventListener("click", () => holo.toggle());
 mapview.prewarm();
 

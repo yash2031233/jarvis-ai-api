@@ -1007,6 +1007,14 @@ async def ws(socket: WebSocket):
             elif t == "interrupt":
                 if vp:
                     vp.interrupt()
+            elif t == "air":                     # hand control driving the real mouse
+                from ..hands import air
+
+                air.handle_air(msg)
+            elif t == "gesture":                 # a held hand pose -> its shortcut
+                from ..hands import air
+
+                asyncio.create_task(air.handle_gesture(str(msg.get("name", "")), voice=vp))
     except WebSocketDisconnect:
         pass
     finally:
