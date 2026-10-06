@@ -1,9 +1,11 @@
 // The Jarvis orb in real 3D (WebGL2, no dependencies).
 //
 // Same design as orb.js: the 2D generator's lines are *lifted* into 3D (onto spheres, tilted
-// rings, an axis through the core…). Each point's x/y is pre-corrected for perspective, so at
-// rest the projection is identical to the original orb; when it turns, every layer has real
-// depth and parallax.
+// rings, an axis through the core…) and the result is honest 3D: every line lies on a real,
+// round sphere (nested ones fill the inside) and x/y are left as drawn. (They used to be
+// pre-scaled so the front view matched the 2D design exactly - which made the back of the orb
+// up to a quarter too big, and turning it looked like seeing it through a lens.) The camera is
+// far away, so the front view still looks like the design.
 //
 // Quality: lines are proper screen-space polylines (mitered joins, round-ish caps,
 // analytic anti-aliasing, constant pixel width) and the glow is the same three Gaussian
@@ -14,7 +16,7 @@ import { ORB_CONFIG, Orb2D, LAYER_ORDER, brightnessField, buildLayers, heat } fr
 
 export { ORB_CONFIG };
 
-const DCAM = 3400;            // camera distance in design px (perspective strength)
+const DCAM = 7600;            // camera distance in design px (gentle perspective: the front view stays the design)
 const D2R = Math.PI / 180;
 
 function mulberry32(a) {
@@ -31,9 +33,15 @@ function mulberry32(a) {
 // Coordinates are relative to the orb center; y points down.
 function liftFunctions(cfg) {
   const [CX, CY] = cfg.center;
+  // A line lies on a ROUND sphere around (cx, cy): radius somewhere between just enough to hold the line and R
+  // (p.depth = where in that range). Squashing one sphere by a factor instead made lens-like streaks when turned.
   const sphere = (cx, cy, R) => (x, y, p) => {
+    if (p.rho === undefined) {
+      const rm = Math.max(...(p.local || [[x, y]]).map(([qx, qy]) => Math.hypot(qx - cx, qy - cy)));
+      p.rho = rm >= R ? rm : rm + (R - rm) * p.depth;
+    }
     const r2 = (x - cx) ** 2 + (y - cy) ** 2;
-    return p.sign * Math.sqrt(Math.max(0, R * R - r2)) * p.depth;
+    return p.sign * Math.sqrt(Math.max(0, p.rho * p.rho - r2));
   };
   const tiltedCircle = (cx, cy) => (x, y, p) => {
     // a ring that looks circular at rest but sits in a tilted plane: z = r·sin(tilt)·cos(θ-θ0)
@@ -70,8 +78,8 @@ function polyParams(layer, rng, cfg, pts) {
   switch (layer) {
     // front and back filled alike, and lines spread through the depth rather than all on the outside of a shell:
     // turned sideways, the orb used to show a hollow slab through the middle and a thin back half
-    case "outer": p.sign = rng() < 0.52 ? 1 : -1; p.depth = 0.62 + rng() * 0.38; break;
-    case "surface": p.sign = rng() < 0.5 ? 1 : -1; p.depth = 0.2 + rng() * 0.8; break;
+    case "outer": p.sign = rng() < 0.5 ? 1 : -1; p.depth = 0.85 + rng() * 0.15; break;
+    case "surface": p.sign = rng() < 0.5 ? 1 : -1; p.depth = 0.35 + rng() * 0.65; break;
     case "arcs": p.tilt = (rng() * 2 - 1) * 32 * D2R; p.phase = rng() * Math.PI * 2; break;
     case "heart":
     case "core": {
@@ -82,11 +90,63 @@ function polyParams(layer, rng, cfg, pts) {
       const r1 = Math.hypot(pts[pts.length - 1][0] - cx, pts[pts.length - 1][1] - cy);
       p.ringLike = pts.length > 60 && Math.abs(r0 - r1) < 25;
       p.tilt = (rng() * 2 - 1) * (layer === "heart" ? 80 : 55) * D2R; p.phase = rng() * Math.PI * 2;
-      p.sign = rng() < 0.5 ? 1 : -1; p.depth = rng();             // a solid ball: z anywhere inside it
+      p.sign = rng() < 0.5 ? 1 : -1; p.depth = Math.sqrt(rng());   // nested spheres all through: a solid ball
       break;
     }
   }
   return p;
+}
+
+// ------------------------------------------------------------------ real 3D chains
+// The lace shell, the inner ball and the nucleus are grown in 3D instead of lifted from the flat drawing: a flat
+// drawing lifted onto spheres bunches up front and back and leaves the sides thin, and its lines turn into streaks
+// edge-on (it looked refracted when turned). Each 2D chain gets a 3D twin of the same length and brightness, zig-
+// zagging over a real sphere through a point spread evenly in all directions - the same look from every side.
+const SOLID = { outer: "shell", surface: "shell", core: "ball", heart: "ball" };
+
+function isRingLike(cfg, pts) {
+  const [CX, CY] = cfg.center;
+  const cx = cfg.core.cx - CX + CX, cy = cfg.core.cy - CY + CY;
+  const r0 = Math.hypot(pts[0][0] - cx, pts[0][1] - cy);
+  const r1 = Math.hypot(pts[pts.length - 1][0] - cx, pts[pts.length - 1][1] - cy);
+  return pts.length > 60 && Math.abs(r0 - r1) < 25;
+}
+
+const v3 = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k],
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+};
+
+function randomUnit(rng) {
+  const z = rng() * 2 - 1, t = rng() * Math.PI * 2, r = Math.sqrt(1 - z * z);
+  return [r * Math.cos(t), r * Math.sin(t), z];
+}
+
+// one zig-zag chain of `steps` bonds over the sphere (center c, radius rad), starting at direction n0
+function chain3d(rng, cfg, c, rad, n0, steps, swirl) {
+  const D2 = Math.PI / 180, zig = cfg.zig * D2;
+  let n = v3.norm(n0);
+  let d = swirl && Math.abs(n[2]) < 0.97 ? v3.norm(v3.cross([0, 0, 1], n)) : v3.norm(v3.cross(n, randomUnit(rng)));
+  if (rng() < 0.5) d = v3.mul(d, -1);
+  let pos = v3.mul(n, rad), side = rng() < 0.5 ? 1 : -1;
+  const pts = [v3.add(c, pos)];
+  for (let i = 0; i < steps; i++) {
+    if (rng() < 0.06) {                       // an occasional turn, like the 2D chains
+      const th = (rng() < 0.5 ? 1 : -1) * 60 * D2;
+      d = v3.add(v3.mul(d, Math.cos(th)), v3.mul(v3.cross(n, d), Math.sin(th)));
+    }
+    const ang = side * zig + (rng() - 0.5) * 0.08;
+    side = -side;
+    const step = v3.add(v3.mul(d, Math.cos(ang)), v3.mul(v3.cross(n, d), Math.sin(ang)));
+    pos = v3.mul(v3.norm(v3.add(pos, v3.mul(step, cfg.seg * (0.85 + rng() * 0.3)))), rad);
+    n = v3.norm(pos);
+    d = v3.norm(v3.add(d, v3.mul(n, -v3.dot(d, n))));   // keep heading along the sphere
+    pts.push(v3.add(c, pos));
+  }
+  return pts;
 }
 
 // ------------------------------------------------------------------ mesh building
@@ -110,13 +170,11 @@ function buildMeshes(cfg) {
     const lift = lifts[name];
 
     const addPoly = (pts2d, p, color, widthScale, closed) => {
-      // to orb-centered coordinates, compute z, then pre-correct x/y for perspective
-      const P = pts2d.map(([x, y]) => {
-        const lx = x - CX, ly = y - CY;
-        const z = lift(lx, ly, p);
-        const k = (DCAM - z) / DCAM;
-        return [lx * k, ly * k, z];
-      });
+      // to orb-centered coordinates and lift into 3D (x/y as drawn: no perspective pre-scaling - see the top)
+      p.local = pts2d.map(([x, y]) => [x - CX, y - CY]);
+      return pushPoly(p.local.map(([lx, ly]) => [lx, ly, lift(lx, ly, p)]), color, widthScale, closed);
+    };
+    const pushPoly = (P, color, widthScale, closed) => {
       const m = P.length;
       for (let i = 0; i < m; i++) {
         const prev = i > 0 ? P[i - 1] : closed ? P[m - 2] : P[i];
@@ -134,16 +192,35 @@ function buildMeshes(cfg) {
       return P;
     };
 
+    const solid = SOLID[name];
+    const coreC = [cfg.core.cx - CX, cfg.core.cy - CY, 0];
     for (const ln of layer.lines) {
       const mid = ln.pts[Math.floor(ln.pts.length / 2)];
-      const k = brightnessField(cfg, mid[0], mid[1]);
       const a = Math.min(1, cfg.lineAlpha * ln.a);
+      if (solid && !isRingLike(cfg, ln.pts)) {
+        // its 3D twin: same length and brightness, over a real sphere, facing any direction
+        const R = { outer: 790, surface: 660, core: cfg.core.r, heart: cfg.heart.r }[name];
+        const c = name === "surface" || name === "outer" ? [0, 0, 0] : coreC;
+        const rad = solid === "shell" ? R * (0.93 + rng() * 0.07) : R * Math.cbrt(0.04 + rng() * 0.96);
+        const P = chain3d(rng, cfg, c, rad, randomUnit(rng), Math.max(2, ln.pts.length - 1), name === "core");
+        const m = P[Math.floor(P.length / 2)];
+        const hc = heat(cfg, brightnessField(cfg, m[0] + CX, m[1] + CY));
+        pushPoly(P, [hc[0] / 255 * a, hc[1] / 255 * a, hc[2] / 255 * a], 1, false);
+        if (rng() < 0.3) {                    // a dot (atom) at the chain's end, flat toward the viewer
+          const e = P[P.length - 1], r = 1.8 + rng();
+          const dot = [];
+          for (let i = 0; i <= 12; i++) { const t = (i / 12) * Math.PI * 2; dot.push([e[0] + Math.cos(t) * r, e[1] + Math.sin(t) * r, e[2]]); }
+          pushPoly(dot, [hc[0] / 255 * a, hc[1] / 255 * a, hc[2] / 255 * a], 0.9, true);
+        }
+        continue;
+      }
+      const k = brightnessField(cfg, mid[0], mid[1]);
       const hc = heat(cfg, k), color = [hc[0] / 255 * a, hc[1] / 255 * a, hc[2] / 255 * a];
       const p = polyParams(name, rng, cfg, ln.pts);
       const P = addPoly(ln.pts, p, color, 1, false);
       if ((name === "ring" || name === "core") && ln.pts.length > 12) sparkPaths.push({ layer: name, pts: P });
     }
-    for (const d of layer.dots) {
+    for (const d of solid ? [] : layer.dots) {
       const k = brightnessField(cfg, d.x, d.y);
       const a = cfg.lineAlpha * d.a;
       const hc = heat(cfg, k), color = [hc[0] / 255 * a, hc[1] / 255 * a, hc[2] / 255 * a];
