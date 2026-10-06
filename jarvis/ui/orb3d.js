@@ -10,7 +10,7 @@
 // passes as the 2D version, done as a GPU blur pyramid. Falls back to the 2D renderer when
 // WebGL2 is unavailable.
 
-import { ORB_CONFIG, Orb2D, LAYER_ORDER, brightnessField, buildLayers } from "./orb.js";
+import { ORB_CONFIG, Orb2D, LAYER_ORDER, brightnessField, buildLayers, heat } from "./orb.js";
 
 export { ORB_CONFIG };
 
@@ -134,7 +134,7 @@ function buildMeshes(cfg) {
       const mid = ln.pts[Math.floor(ln.pts.length / 2)];
       const k = brightnessField(cfg, mid[0], mid[1]);
       const a = Math.min(1, cfg.lineAlpha * ln.a);
-      const color = [Math.min(255, cr * k) / 255 * a, Math.min(255, cg * k) / 255 * a, Math.min(255, cb * k * 1.08) / 255 * a];
+      const hc = heat(cfg, k), color = [hc[0] / 255 * a, hc[1] / 255 * a, hc[2] / 255 * a];
       const p = polyParams(name, rng, cfg, ln.pts);
       const P = addPoly(ln.pts, p, color, 1, false);
       if ((name === "ring" || name === "core") && ln.pts.length > 12) sparkPaths.push({ layer: name, pts: P });
@@ -142,7 +142,7 @@ function buildMeshes(cfg) {
     for (const d of layer.dots) {
       const k = brightnessField(cfg, d.x, d.y);
       const a = cfg.lineAlpha * d.a;
-      const color = [Math.min(255, cr * k) / 255 * a, Math.min(255, cg * k) / 255 * a, Math.min(255, cb * k) / 255 * a];
+      const hc = heat(cfg, k), color = [hc[0] / 255 * a, hc[1] / 255 * a, hc[2] / 255 * a];
       const pts = [];
       for (let i = 0; i <= 12; i++) {
         const t = (i / 12) * Math.PI * 2;
@@ -235,6 +235,9 @@ out vec4 o;
 void main() {
   vec3 glow = (texture(uG0, vUV).rgb * uGA.x + texture(uG1, vUV).rgb * uGA.y + texture(uG2, vUV).rgb * uGA.z) * uBoost;
   vec3 orb = texture(uScene, vUV).rgb + glow;
+  vec2 cpx = vec2(vUV.x, 1.0 - vUV.y) * uRes;
+  float cr = length(cpx - uGradC) / (uGradR * 0.42);
+  orb += vec3(1.0, 0.6, 0.28) * (0.16 + 0.5 * uGradA) * exp(-cr * cr * 4.0);
   vec3 base = vec3(0.0);
   if (uBackground) {
     vec2 px = vec2(vUV.x, 1.0 - vUV.y) * uRes;

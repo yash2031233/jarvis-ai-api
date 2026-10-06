@@ -13,16 +13,17 @@ export const ORB_CONFIG = {
   size: 1920,
   center: [1010, 962],
   color: [246, 176, 122],       // line color (additive)
-  lineAlpha: 0.52,
+  lineAlpha: 0.5,
   lineWidth: 2.0,
   glow: [[3, 0.32], [12, 0.16], [40, 0.09]], // [blur px, alpha] passes
   glowColorBoost: [1.0, 0.72, 0.42],
-  hotspot: { x: 1265, y: 290, r: 250, gain: 0.55 }, // whitening region (top-right rim)
+  hotspot: { x: 1265, y: 290, r: 250, gain: 0.3 }, // whitening region (top-right rim) - warm white, never green
+  edgeFade: [665, 110],        // lines past this radius fade out over this distance (a soft rim, no spikes)
   seg: 9.5,                    // bond length
   zig: 30,                     // zig-zag half angle (deg)
   outer: {
     center: [1003, 975], squash: [1, 1.04], chains: 585, tiers: 5, blockDeg: 9, gap: 0.45,
-    len: [5, 18], zig: 24, rung: 0.06, guides: 9,
+    len: [5, 18], zig: 24, rung: 0.025, guides: 9,
     // [fromDeg, toDeg, innerR, outerR, density]  (0° = right, 90° = down, -90° = up)
     profile: [
       [-200, -150, 581, 666, 0.25],   // upper-left (thin)
@@ -35,11 +36,11 @@ export const ORB_CONFIG = {
     ],
   },
   arcs: { count: 34 },
-  surface: { chains: 686 },
+  surface: { chains: 560 },
   core: { cx: 962, cy: 978, r: 330, rings: 60, chains: 480 },
   ring: { cx: 960, cy: 992, a: 655, b: 176, tilt: -0.4, chains: 44 },
-  streak: { from: [788, 672], to: [1240, 1402], lines: 16 },
-  comet: { from: [1305, 1132], to: [1575, 1035], chains: 26 },
+  streak: { from: [788, 672], to: [1240, 1402], lines: 7 },
+  comet: { from: [1305, 1132], to: [1575, 1035], chains: 14 },
 };
 
 // ------------------------------------------------------------------ utilities
@@ -347,14 +348,18 @@ export function buildLayers(cfg) {
     const dx = to[0] - from[0], dy = to[1] - from[1], len = Math.hypot(dx, dy);
     const nx = -dy / len, ny = dx / len;
     for (let i = 0; i < lines; i++) {
-      const off = chem.rand(-11, 11), skew = chem.rand(-8, 8);
-      const s0 = chem.rand(0, 0.06), s1 = chem.rand(0.93, 1);
-      const pts = [];
-      for (let s = s0; s <= s1; s += 0.01) {
-        const o = off + skew * (s - 0.5);
-        pts.push([from[0] + dx * s + nx * o, from[1] + dy * s + ny * o]);
+      const off = chem.rand(-7, 7), skew = chem.rand(-5, 5);
+      const s0 = chem.rand(0.02, 0.1), s1 = chem.rand(0.9, 0.98), peak = chem.rand(0.45, 0.75);
+      // short pieces, brightest near the core, fading to nothing at both ends
+      for (let a = s0; a < s1 - 0.005; a += 0.05) {
+        const b = Math.min(s1, a + 0.055), pts = [];
+        for (let t = a; t <= b + 1e-9; t += 0.01) {
+          const o = off + skew * (t - 0.5);
+          pts.push([from[0] + dx * t + nx * o, from[1] + dy * t + ny * o]);
+        }
+        const m = (a + b) / 2, fade = Math.sin(Math.PI * (m - s0) / (s1 - s0));
+        lay.line(pts, peak * fade * fade);
       }
-      lay.line(pts, chem.rand(0.7, 1));
     }
   }
 
@@ -370,13 +375,32 @@ export function buildLayers(cfg) {
       const x = from[0] + Math.cos(ang) * len * s + chem.rand(-spread, spread) * Math.sin(ang);
       const y = from[1] + Math.sin(ang) * len * s - chem.rand(-spread, spread) * Math.cos(ang);
       chem.chain(lay, x, y, { steps: chem.rand(4, 14), dir: () => ang + chem.rand(-0.12, 0.12), turn: 0.05,
-        branch: 0.08, dotEnd: 0.4, alpha: 0.9 });
+        branch: 0.08, dotEnd: 0.4, alpha: 0.6 });
+    }
+  }
+  if (cfg.edgeFade) {
+    const [R0, W] = cfg.edgeFade;
+    for (const name of ["outer", "arcs", "surface"]) {
+      const lay = L[name];
+      if (!lay) continue;
+      const fade = (x, y) => { const r = Math.hypot(x - CX, y - CY); return r <= R0 ? 1 : Math.max(0, 1 - (r - R0) / W); };
+      lay.lines = lay.lines.map((ln) => {
+        const far = ln.pts.reduce((m, q) => Math.max(m, Math.hypot(q[0] - CX, q[1] - CY)), 0);
+        return far <= R0 ? ln : { pts: ln.pts, a: ln.a * Math.min(...ln.pts.map((q) => fade(q[0], q[1]))) ** 0.7 };
+      }).filter((ln) => ln.a > 0.04);
+      lay.dots = lay.dots.map((d) => ({ ...d, a: d.a * fade(d.x, d.y) })).filter((d) => d.a > 0.04);
     }
   }
   return L;
 }
 
 // ------------------------------------------------------------------ baking
+// line colour at brightness k: brighter means warmer-whiter (scaling r, g and b alike clips red first and the
+// hot rim turned yellow-green)
+export function heat(cfg, k) {
+  const [r, g, b] = cfg.color, t = Math.max(0, k - 1);
+  return [Math.min(255, r * (1 + t * 0.3)), Math.min(255, g * (1 + t * 0.5)), Math.min(255, b * (1 + t * 0.75))];
+}
 export function brightnessField(cfg, x, y) {
   const h = cfg.hotspot;
   const d = Math.hypot(x - h.x, y - h.y) / h.r;
@@ -396,7 +420,7 @@ function bakeLayer(layer, cfg, scale) {
   for (const ln of layer.lines) {
     const mid = ln.pts[Math.floor(ln.pts.length / 2)];
     const k = brightnessField(cfg, mid[0], mid[1]);
-    const cr = Math.min(255, r * k), cg = Math.min(255, gg * k), cb = Math.min(255, b * k * 1.08);
+    const [cr, cg, cb] = heat(cfg, k);
     g.strokeStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${Math.min(1, cfg.lineAlpha * ln.a)})`;
     g.beginPath();
     g.moveTo(ln.pts[0][0], ln.pts[0][1]);
@@ -406,7 +430,8 @@ function bakeLayer(layer, cfg, scale) {
   g.lineWidth = cfg.lineWidth * 0.9;
   for (const d of layer.dots) {
     const k = brightnessField(cfg, d.x, d.y);
-    g.strokeStyle = `rgba(${Math.min(255, r * k) | 0},${Math.min(255, gg * k) | 0},${Math.min(255, b * k) | 0},${cfg.lineAlpha * d.a})`;
+    const [dr, dg, db] = heat(cfg, k);
+    g.strokeStyle = `rgba(${dr | 0},${dg | 0},${db | 0},${cfg.lineAlpha * d.a})`;
     g.beginPath();
     g.arc(d.x, d.y, d.r, 0, Math.PI * 2);
     g.stroke();
